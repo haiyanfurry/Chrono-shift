@@ -32,6 +32,7 @@
 #ifdef _WIN32
     #include <winsock2.h>
     #include <windows.h>
+    #include <time.h>
     #pragma comment(lib, "ws2_32.lib")
     typedef SOCKET socket_t;
     #define CLOSE_SOCKET(fd) closesocket(fd)

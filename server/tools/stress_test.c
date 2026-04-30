@@ -27,6 +27,10 @@
     #include <winsock2.h>
     #include <windows.h>
     #include <process.h>
+    /* Windows 上 long long 的原子操作 */
+    #define ATOMIC_INC(val)     InterlockedIncrement64((volatile LONG64*)&(val))
+    #define ATOMIC_ADD(val, n)  InterlockedExchangeAdd64((volatile LONG64*)&(val), (n))
+    #define ATOMIC_EXCH(val, n) InterlockedExchange64((volatile LONG64*)&(val), (n))
     typedef HANDLE thread_t;
     #define THREAD_FUNC unsigned __stdcall
     #define THREAD_RETURN return 0
@@ -39,7 +43,11 @@
     #include <netinet/in.h>
     #include <netdb.h>
     #include <arpa/inet.h>
+    #include <errno.h>
     #include <signal.h>
+    #define ATOMIC_INC(val)     __sync_add_and_fetch(&(val), 1)
+    #define ATOMIC_ADD(val, n)  __sync_add_and_fetch(&(val), (n))
+    #define ATOMIC_EXCH(val, n) __sync_lock_test_and_set(&(val), (n))
     typedef pthread_t thread_t;
     #define THREAD_FUNC void*
     #define THREAD_RETURN return NULL
@@ -300,16 +308,16 @@ static THREAD_FUNC worker_thread(void* arg) {
 
         /* 更新统计 */
         if (result == 0) {
-            InterlockedIncrement(&g_stats.success_count);
+            ATOMIC_INC(g_stats.success_count);
         } else {
-            InterlockedIncrement(&g_stats.error_count);
+            ATOMIC_INC(g_stats.error_count);
         }
-        InterlockedIncrement(&g_stats.total_requests);
-        InterlockedExchangeAdd64(&g_stats.total_latency_us, latency);
+        ATOMIC_INC(g_stats.total_requests);
+        ATOMIC_ADD(g_stats.total_latency_us, latency);
 
         /* 记录延迟样本 */
         if (g_stats.latency_count < g_stats.latency_capacity) {
-            int idx = InterlockedIncrement(&g_stats.latency_count) - 1;
+            int idx = ATOMIC_INC(g_stats.latency_count) - 1;
             if (idx >= 0 && idx < g_stats.latency_capacity) {
                 g_stats.latencies[idx] = (double)latency;
             }
@@ -317,9 +325,9 @@ static THREAD_FUNC worker_thread(void* arg) {
 
         /* 更新最大/最小延迟 */
         if (latency < g_stats.min_latency_us || g_stats.min_latency_us == 0)
-            InterlockedExchange64(&g_stats.min_latency_us, latency);
+            ATOMIC_EXCH(g_stats.min_latency_us, latency);
         if (latency > g_stats.max_latency_us)
-            InterlockedExchange64(&g_stats.max_latency_us, latency);
+            ATOMIC_EXCH(g_stats.max_latency_us, latency);
 
         /* QPS 控制 */
         if (interval_us > 0) {
