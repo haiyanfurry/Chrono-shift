@@ -107,6 +107,11 @@ char* rust_generate_jwt(const char* user_id)
 {
     if (!user_id) return NULL;
     /* 生成简单的 base64-like token */
+
+    /* 检查 user_id 长度 (防止 payload snprintf 截断后 plen 计算偏差) */
+    size_t uid_len = strlen(user_id);
+    if (uid_len > 512) return NULL;  /* 生产环境应使用 Rust auth.rs */
+
     time_t now = time(NULL);
     char header[128];
     snprintf(header, sizeof(header), "{\"alg\":\"HS256\",\"typ\":\"JWT\"}");
@@ -118,7 +123,14 @@ char* rust_generate_jwt(const char* user_id)
     static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     size_t hlen = strlen(header);
     size_t plen = strlen(payload);
-    char* result = (char*)malloc(hlen * 2 + plen * 2 + 64);
+
+    /* 安全计算缓冲区大小:
+     * - header/payload 各至多 128/256 字节
+     * - base64 展开比至多 4/3 倍, 分配 hlen*2 + plen*2 足够
+     * - 防整数溢出检查 */
+    if (hlen > SIZE_MAX / 2 || plen > SIZE_MAX / 2) return NULL;
+    size_t buf_size = hlen * 2 + plen * 2 + 64;
+    char* result = (char*)malloc(buf_size);
     if (!result) return NULL;
 
     /* 简易编码 (非标准 base64，仅用于测试) */

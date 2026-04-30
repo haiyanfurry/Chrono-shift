@@ -6,6 +6,8 @@
  * 递归下降解析器，支持完整的 JSON 语法
  * 构建 API: 生成 JSON 字符串
  * 解析 API: 解析 JSON 到树形结构
+ *
+ * SECURITY: 所有解析路径均有深度/长度限制
  */
 
 #include "server.h"
@@ -15,7 +17,20 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
-#include <math.h>
+#include <limits.h>
+
+/* ============================================================
+ * 安全限制常量
+ * ============================================================ */
+
+/* 最大嵌套深度 (防止栈溢出) */
+#define JSON_MAX_DEPTH         64
+
+/* 最大字符串长度 (防止 OOM) */
+#define JSON_MAX_STRING_LENGTH (1024 * 1024)  /* 1MB */
+
+/* 最大数组/对象元素数量 (防止 OOM) */
+#define JSON_MAX_ELEMENT_COUNT (256 * 1024)   /* 256K */
 
 /* ============================================================
  * 内部解析器状态
@@ -25,6 +40,7 @@ typedef struct {
     const char* input;
     size_t pos;
     size_t length;
+    unsigned int depth;        /* 当前递归深度 */
     char error[256];
 } JsonParser;
 
@@ -126,6 +142,7 @@ JsonValue* json_parse(const char* input)
     parser.input = input;
     parser.pos = 0;
     parser.length = strlen(input);
+    parser.depth = 0;
     parser.error[0] = '\0';
 
     json_skip_whitespace(&parser);
@@ -143,9 +160,14 @@ static JsonValue* json_parse_value(JsonParser* parser)
     int c = json_peek(parser);
     if (c < 0) return NULL;
 
+    /* 递归深度限制: 防止栈溢出 */
+    if (parser->depth >= JSON_MAX_DEPTH) {
+        return NULL;
+    }
+
     switch (c) {
-        case '{': return json_parse_object(parser);
-        case '[': return json_parse_array(parser);
+        case '{': parser->depth++; JsonValue* o = json_parse_object(parser); parser->depth--; return o;
+        case '[': parser->depth++; JsonValue* a = json_parse_array(parser);  parser->depth--; return a;
         case '"': return json_parse_string(parser);
         case 't': case 'f': return json_parse_bool(parser);
         case 'n': return json_parse_null(parser);
@@ -209,11 +231,19 @@ static JsonValue* json_parse_object(JsonParser* parser)
             return NULL;
         }
 
+        /* 最大元素数量限制 */
+        if (obj->object.count >= JSON_MAX_ELEMENT_COUNT) {
+            json_value_free(key_val);
+            json_value_free(value);
+            json_value_free(obj);
+            return NULL;
+        }
+
         /* 扩展容量 */
         if (obj->object.count >= capacity) {
             capacity *= 2;
             JsonPair* new_pairs = (JsonPair*)realloc(obj->object.pairs,
-                                                      capacity * sizeof(JsonPair));
+                                                       capacity * sizeof(JsonPair));
             if (!new_pairs) {
                 json_value_free(key_val);
                 json_value_free(value);
@@ -272,10 +302,17 @@ static JsonValue* json_parse_array(JsonParser* parser)
             return NULL;
         }
 
+        /* 最大元素数量限制 */
+        if (arr->array.count >= JSON_MAX_ELEMENT_COUNT) {
+            json_value_free(val);
+            json_value_free(arr);
+            return NULL;
+        }
+
         if (arr->array.count >= capacity) {
             capacity *= 2;
             JsonValue** new_items = (JsonValue**)realloc(arr->array.items,
-                                                          capacity * sizeof(JsonValue*));
+                                                           capacity * sizeof(JsonValue*));
             if (!new_items) {
                 json_value_free(val);
                 json_value_free(arr);
@@ -304,13 +341,18 @@ static JsonValue* json_parse_string(JsonParser* parser)
 {
     json_advance(parser); /* 吃掉 '"' */
 
-    /* 估算最大长度 */
+    /* 字符串长度限制: 防止 OOM */
     size_t capacity = 64;
     char* str = (char*)malloc(capacity);
     if (!str) return NULL;
     size_t len = 0;
 
     while (parser->pos < parser->length) {
+        /* 字符串最大长度检查 */
+        if (len >= JSON_MAX_STRING_LENGTH) {
+            free(str);
+            return NULL;
+        }
         int c = json_advance(parser);
         if (c == '"') {
             str[len] = '\0';
@@ -580,15 +622,27 @@ double json_extract_number(const char* json_str, const char* key)
 char* json_build_response(const char* status, const char* message, const char* data_json)
 {
     /* 构建 {"status":"ok","message":"...","data":{...}} */
-    size_t len = strlen(status) + strlen(message) + (data_json ? strlen(data_json) : 0) + 128;
+    size_t status_len = strlen(status);
+    size_t msg_len = strlen(message);
+    size_t data_len = data_json ? strlen(data_json) : 0;
+    /* 确保 len 计算不溢出 */
+    if (status_len > (SIZE_MAX - msg_len - 128)) return NULL;
+    if (data_len > (SIZE_MAX - status_len - msg_len - 128)) return NULL;
+    size_t len = status_len + msg_len + data_len + 128;
     char* result = (char*)malloc(len);
     if (result) {
+        int n;
         if (data_json) {
-            snprintf(result, len, "{\"status\":\"%s\",\"message\":\"%s\",\"data\":%s}",
-                     status, message, data_json);
+            n = snprintf(result, len, "{\"status\":\"%s\",\"message\":\"%s\",\"data\":%s}",
+                         status, message, data_json);
         } else {
-            snprintf(result, len, "{\"status\":\"%s\",\"message\":\"%s\"}",
-                     status, message);
+            n = snprintf(result, len, "{\"status\":\"%s\",\"message\":\"%s\"}",
+                         status, message);
+        }
+        /* snprintf 截断时释放并返回 NULL */
+        if (n < 0 || (size_t)n >= len) {
+            free(result);
+            return NULL;
         }
     }
     return result;
@@ -610,6 +664,8 @@ char* json_escape_string(const char* input)
 
     size_t len = strlen(input);
     /* 最坏情况: 每个字符都需要转义为 \uXXXX (6字节) */
+    /* 整数溢出检查: 确保 len * 6 + 1 不溢出 */
+    if (len > (SIZE_MAX / 6)) return NULL;
     size_t max_len = len * 6 + 1;
     char* escaped = (char*)malloc(max_len);
     if (!escaped) return NULL;

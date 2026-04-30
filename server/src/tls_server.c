@@ -432,7 +432,7 @@ void tls_client_cleanup(void)
  */
 static int generate_self_signed_cert(const char* cert_path, const char* key_path)
 {
-    /* 确保目录存在 */
+    /* 确保目录存在 (安全: 使用 mkdir_p 而不是 system()) */
     char dir[512];
     strncpy(dir, cert_path, sizeof(dir) - 1);
     dir[sizeof(dir) - 1] = '\0';
@@ -440,15 +440,7 @@ static int generate_self_signed_cert(const char* cert_path, const char* key_path
     if (!last_slash) last_slash = strrchr(dir, '\\');
     if (last_slash) {
         *last_slash = '\0';
-#ifdef PLATFORM_WINDOWS
-        char mkdir_cmd[1024];
-        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "if not exist \"%s\" mkdir \"%s\"", dir, dir);
-        system(mkdir_cmd);
-#else
-        char mkdir_cmd[1024];
-        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p \"%s\"", dir);
-        system(mkdir_cmd);
-#endif
+        mkdir_p(dir);
     }
 
     /* 生成 RSA 私钥 */

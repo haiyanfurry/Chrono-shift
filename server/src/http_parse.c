@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
 /* ============================================================
  * HTTP 请求解析
@@ -95,6 +96,23 @@ int parse_http_request(Connection* conn)
  * 构建 HTTP 响应
  * ============================================================ */
 
+/* 安全地追加 snprintf 到缓冲区 (返回 0=成功, -1=缓冲区满) */
+static int safe_append(char* buf, size_t buf_size, size_t* off, const char* fmt, ...)
+{
+    if (*off >= buf_size) return -1;
+    va_list args;
+    va_start(args, fmt);
+    int n = vsnprintf(buf + *off, buf_size - *off, fmt, args);
+    va_end(args);
+    if (n < 0 || (size_t)n >= buf_size - *off) {
+        /* 缓冲区已满, 标记但不报错 */
+        *off = buf_size;
+        return -1;
+    }
+    *off += (size_t)n;
+    return 0;
+}
+
 int build_http_response(Connection* conn)
 {
     HttpResponse* resp = &conn->response;
@@ -104,35 +122,35 @@ int build_http_response(Connection* conn)
     if (resp->status_text[0] == '\0')
         strncpy(resp->status_text, "OK", sizeof(resp->status_text) - 1);
 
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                    "HTTP/1.1 %d %s\r\n", resp->status_code, resp->status_text);
+    safe_append(buf, MAX_BUFFER_SIZE, &off,
+                "HTTP/1.1 %d %s\r\n", resp->status_code, resp->status_text);
 
     if (resp->header_count == 0) {
-        off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                        "Content-Type: application/json; charset=utf-8\r\n");
+        safe_append(buf, MAX_BUFFER_SIZE, &off,
+                    "Content-Type: application/json; charset=utf-8\r\n");
     }
 
     for (size_t i = 0; i < resp->header_count; i++) {
-        off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                        "%s: %s\r\n", resp->headers[i][0], resp->headers[i][1]);
+        safe_append(buf, MAX_BUFFER_SIZE, &off,
+                    "%s: %s\r\n", resp->headers[i][0], resp->headers[i][1]);
     }
 
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                    "Content-Length: %zu\r\n", resp->body_length);
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                    "Connection: keep-alive\r\n");
+    safe_append(buf, MAX_BUFFER_SIZE, &off,
+                "Content-Length: %zu\r\n", resp->body_length);
+    safe_append(buf, MAX_BUFFER_SIZE, &off,
+                "Connection: keep-alive\r\n");
     /* ---- 安全响应头 ---- */
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                    "Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n");
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                    "X-Content-Type-Options: nosniff\r\n");
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                    "X-Frame-Options: DENY\r\n");
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                    "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'\r\n");
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
-                    "Referrer-Policy: no-referrer\r\n");
-    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off, "\r\n");
+    safe_append(buf, MAX_BUFFER_SIZE, &off,
+                "Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n");
+    safe_append(buf, MAX_BUFFER_SIZE, &off,
+                "X-Content-Type-Options: nosniff\r\n");
+    safe_append(buf, MAX_BUFFER_SIZE, &off,
+                "X-Frame-Options: DENY\r\n");
+    safe_append(buf, MAX_BUFFER_SIZE, &off,
+                "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'\r\n");
+    safe_append(buf, MAX_BUFFER_SIZE, &off,
+                "Referrer-Policy: no-referrer\r\n");
+    safe_append(buf, MAX_BUFFER_SIZE, &off, "\r\n");
 
     if (resp->body && resp->body_length > 0) {
         if (off + resp->body_length <= MAX_BUFFER_SIZE) {

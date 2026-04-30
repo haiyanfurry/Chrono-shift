@@ -255,6 +255,13 @@ static int ws_process_frame(WsConnection* conn)
         if (recv(conn->fd, (char*)mask, 4, 0) != 4) return -1;
     }
 
+    /* 验证 payload 长度上限 (防止 OOM) */
+    if (payload_length > WS_MAX_FRAME_SIZE) {
+        LOG_WARN("WebSocket 帧 payload 过大: %llu (最大: %u)",
+                  (unsigned long long)payload_length, WS_MAX_FRAME_SIZE);
+        return -1;
+    }
+
     /* 读取 payload */
     uint8_t* payload = NULL;
     if (payload_length > 0) {

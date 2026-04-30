@@ -390,8 +390,8 @@ void handle_file_upload(const HttpRequest* req, HttpResponse* resp, void* user_d
     if (q_filename) {
         const char* q_ext = get_file_extension(q_filename);
         if (*q_ext != '\0') {
-            /* 复制到静态缓冲区避免 dangling pointer */
-            static char ext_buf[32];
+            /* 复制到本地缓冲区 */
+            char ext_buf[32];
             size_t elen = strlen(q_ext);
             if (elen >= sizeof(ext_buf)) elen = sizeof(ext_buf) - 1;
             memcpy(ext_buf, q_ext, elen);
@@ -415,7 +415,7 @@ void handle_file_upload(const HttpRequest* req, HttpResponse* resp, void* user_d
                     /* 提取扩展名 */
                     const char* dot = strrchr(fn_start, '.');
                     if (dot && dot < fn_end) {
-                        static char ext_buf2[32];
+                        char ext_buf2[32];
                         size_t elen = (size_t)(fn_end - dot - 1);
                         if (elen >= sizeof(ext_buf2)) elen = sizeof(ext_buf2) - 1;
                         memcpy(ext_buf2, dot + 1, elen);
@@ -433,7 +433,7 @@ void handle_file_upload(const HttpRequest* req, HttpResponse* resp, void* user_d
         if (json_filename) {
             const char* json_ext = get_file_extension(json_filename);
             if (*json_ext != '\0') {
-                static char ext_buf3[32];
+                char ext_buf3[32];
                 size_t elen = strlen(json_ext);
                 if (elen >= sizeof(ext_buf3)) elen = sizeof(ext_buf3) - 1;
                 memcpy(ext_buf3, json_ext, elen);
