@@ -1,0 +1,27 @@
+[2026-04-30 12:07:39] [INFO] [main.c:129] Chrono-shift 服务端启动中...
+[2026-04-30 12:07:39] [INFO] [rust_stubs.c:116] 初始化 HTTP 服务器 (端口: 8080)...
+[INFO] HTTP 服务器初始化完成
+[2026-04-30 12:07:39] [INFO] [rust_stubs.c:122] 初始化数据库...
+[2026-04-30 12:07:39] [INFO] [database.c:192] 初始化数据库: ./data/db/chrono.db
+[2026-04-30 12:07:39] [INFO] [database.c:216] 数据库初始化完成: ./data/db/chrono.db
+[2026-04-30 12:07:39] [INFO] [rust_stubs.c:128] 服务器初始化完成
+[INFO] 注册路由: POST /api/user/register
+[INFO] 注册路由: POST /api/user/login
+[INFO] 注册路由: GET /api/user/profile
+[INFO] 注册路由: PUT /api/user/update
+[INFO] 注册路由: GET /api/user/search
+[INFO] 注册路由: GET /api/user/friends
+[INFO] 注册路由: POST /api/user/friends/add
+[INFO] 注册路由: POST /api/message/send
+[INFO] 注册路由: GET /api/message/list
+[INFO] 注册路由: GET /api/templates
+[INFO] 注册路由: POST /api/templates/upload
+[INFO] 注册路由: GET /api/templates/download
+[INFO] 注册路由: POST /api/templates/apply
+[INFO] 注册路由: POST /api/file/upload
+[INFO] 注册路由: GET /api/file/*
+[INFO] 注册路由: POST /api/avatar/upload
+[2026-04-30 12:07:39] [INFO] [main.c:156] TLS 未配置，仅 HTTP
+[INFO] HTTP 服务器已启动: 0.0.0.0:8080, 工作线程: 4
+[2026-04-30 12:07:39] [INFO] [main.c:166] Chrono-shift 服务端已启动: 0.0.0.0:8080
+[2026-04-30 12:07:39] [INFO] [main.c:167] 按 Ctrl+C 停止服务器

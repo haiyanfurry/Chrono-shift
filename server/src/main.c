@@ -13,6 +13,7 @@
 
 #include "server.h"
 #include "http_server.h"
+#include "tls_server.h"
 #include "websocket.h"
 #include "database.h"
 #include "user_handler.h"
@@ -105,6 +106,10 @@ int main(int argc, char* argv[])
             strncpy(g_config.storage_path, argv[++i], sizeof(g_config.storage_path) - 1);
         } else if (strcmp(argv[i], "--log-level") == 0 && i + 1 < argc) {
             g_config.log_level = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--tls-cert") == 0 && i + 1 < argc) {
+            strncpy(g_config.tls_cert, argv[++i], sizeof(g_config.tls_cert) - 1);
+        } else if (strcmp(argv[i], "--tls-key") == 0 && i + 1 < argc) {
+            strncpy(g_config.tls_key, argv[++i], sizeof(g_config.tls_key) - 1);
         } else if (strcmp(argv[i], "--help") == 0) {
             printf("Chrono-shift Server v0.1.0\n");
             printf("用法: chrono-server [选项]\n");
@@ -113,6 +118,8 @@ int main(int argc, char* argv[])
             printf("  --db <path>            数据库路径 (默认: ./data/db/chrono.db)\n");
             printf("  --storage <path>       文件存储路径 (默认: ./data/storage)\n");
             printf("  --log-level <0-3>      日志级别 (默认: 1)\n");
+            printf("  --tls-cert <path>      TLS 证书文件路径 (PEM 格式)\n");
+            printf("  --tls-key <path>       TLS 私钥文件路径 (PEM 格式)\n");
             printf("  --help                 显示此帮助\n");
             return 0;
         }
@@ -132,6 +139,22 @@ int main(int argc, char* argv[])
 
     /* 注册路由 */
     register_routes();
+
+    /* 初始化 TLS（如果配置了证书） */
+    if (g_config.tls_cert[0] != '\0' && g_config.tls_key[0] != '\0') {
+        LOG_INFO("TLS 证书: %s", g_config.tls_cert);
+        LOG_INFO("TLS 密钥: %s", g_config.tls_key);
+        if (tls_server_init(g_config.tls_cert, g_config.tls_key) != 0) {
+            LOG_ERROR("TLS 初始化失败");
+            return 1;
+        }
+        LOG_INFO("TLS 已启用 (端口 %d 将同时支持 HTTP + HTTPS)", g_config.port);
+    } else if (g_config.tls_cert[0] != '\0' || g_config.tls_key[0] != '\0') {
+        LOG_ERROR("必须同时指定 --tls-cert 和 --tls-key");
+        return 1;
+    } else {
+        LOG_INFO("TLS 未配置，仅 HTTP");
+    }
 
     /* 启动服务器 */
     g_running = true;

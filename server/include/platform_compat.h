@@ -125,6 +125,19 @@ static inline int set_nonblocking(socket_t fd)
 #endif
 }
 
+/* 设置阻塞 (清除非阻塞标志) */
+static inline int set_blocking(socket_t fd)
+{
+#ifdef PLATFORM_WINDOWS
+    u_long mode = 0;
+    return ioctlsocket(fd, FIONBIO, &mode) == 0 ? 0 : -1;
+#else
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) return -1;
+    return fcntl(fd, F_SETFL, flags & ~O_NONBLOCK);
+#endif
+}
+
 /* ============================================================
  * 目录迭代抽象
  * ============================================================ */

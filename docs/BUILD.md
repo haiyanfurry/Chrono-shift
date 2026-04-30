@@ -74,8 +74,22 @@ cmake --build build
 **使用 Makefile:**
 ```bash
 cd server
-make rust   # 编译 Rust 模块
-make build  # 编译 C 代码
+
+# 编译 Rust 模块
+make rust
+
+# 编译 C 代码（无 TLS 模式，无需 OpenSSL）
+make build
+
+# 编译 C 代码（启用 TLS 加密，需安装 libssl-dev）
+make HAS_TLS=1 build
+
+# 编译测试工具
+make debug-cli
+make stress-test
+
+# 清理
+make clean
 # 输出: server/build/chrono-server
 ```
 
@@ -92,6 +106,8 @@ make build  # 编译 C 代码
 | `--db <path>` | 数据库路径 | `./data/db/chrono.db` |
 | `--storage <path>` | 文件存储路径 | `./data/storage` |
 | `--log-level <0-3>` | 日志级别 (0=DEBUG, 3=ERROR) | `1` |
+| `--tls-cert <path>` | TLS 证书文件路径 (PEM) | — (纯 HTTP) |
+| `--tls-key <path>` | TLS 私钥文件路径 (PEM) | — (纯 HTTP) |
 | `--help` | 显示帮助 | — |
 
 ---
@@ -128,12 +144,77 @@ cargo build --release
 
 ### 编译 C 服务器
 
-**使用 CMake (MinGW):**
+**方式 A：使用 Makefile（推荐）**
+
+| 构建模式 | 命令 | 说明 |
+|---------|------|------|
+| 无 TLS（默认） | `cd server && mingw32-make` | 使用 `tls_stub.c` 桩，无需 OpenSSL |
+| 启用 TLS | `cd server && mingw32-make HAS_TLS=1` | 需 MinGW 版 OpenSSL（如通过 MSYS2 安装） |
+
+```bash
+cd server
+
+# 无 TLS 编译（默认，无需 OpenSSL）
+mingw32-make
+
+# 启用 TLS 编译
+mingw32-make HAS_TLS=1
+
+# 清理编译产物
+mingw32-make clean
+
+# 输出: server/build/chrono-server.exe
+# 输出 (TLS): server/out/chrono-server.exe
+```
+
+**方式 B：使用 CMake (MinGW)**
 ```bash
 cd server
 cmake -B build -G "MinGW Makefiles"
 cmake --build build
 # 输出: server/build/chrono-server.exe
+```
+
+### 生成自签名测试证书
+
+```bash
+cd server
+
+# 创建证书目录（如不存在）
+mkdir -p certs
+
+# 生成 RSA 2048 自签名证书，CN=127.0.0.1
+openssl req -x509 -newkey rsa:2048 \
+  -keyout certs/server.key -out certs/server.crt \
+  -days 365 -nodes \
+  -subj "/CN=127.0.0.1" \
+  -addext "subjectAltName=IP:127.0.0.1"
+```
+
+> **证书文件位置**: `server/certs/server.crt`（证书）和 `server/certs/server.key`（私钥）
+
+### 运行 TLS 版服务器
+
+```bash
+cd server
+
+# Windows 下需先将 OpenSSL DLL 目录加入 PATH
+set PATH=D:\mys32\mingw64\bin;%PATH%
+
+# 启动 HTTPS 服务器（端口 8443）
+out\chrono-server.exe --port 8443 --tls-cert certs\server.crt --tls-key certs\server.key
+
+# 使用 openssl 验证 TLS 握手
+openssl s_client -connect 127.0.0.1:8443
+```
+
+**预期输出（TLS 握手成功）：**
+```
+New, TLSv1.3, Cipher is TLS_AES_128_GCM_SHA256
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_128_GCM_SHA256
+Verification: OK
 ```
 
 ### 编译 C 客户端
@@ -233,6 +314,35 @@ Windows 上使用 select() 替代。在 MinGW 下编译不会有问题。
 A: 服务器仍然可以编译和运行，只是不使用 Rust 加密模块
 (仅使用内置的基础加密)。要启用完整安全功能，请先执行
 `cd server/security && cargo build --release`。
+
+### Q: 编译时报 `openssl/ssl.h` 未找到？
+A: 这是 OpenSSL 开发库未安装导致的。项目支持条件编译：
+- **不编译 TLS**: 直接运行 `make`（自动使用 `tls_stub.c` 桩实现）
+- **启用 TLS**: 安装 OpenSSL 后使用 `make HAS_TLS=1`
+- Linux: `sudo apt install libssl-dev`
+- Windows: 需要安装 MinGW 兼容的 OpenSSL（如通过 MSYS2: `pacman -S mingw-w64-x86_64-openssl`）
+
+### Q: Windows 上使用官方 OpenSSL 安装程序后编译仍失败？
+A: 官方 OpenSSL for Windows 提供的是 VC (Visual C++) 格式的库文件，MinGW GCC 无法直接链接。解决方案：
+1. 通过 MSYS2 安装: `pacman -S mingw-w64-x86_64-openssl`
+2. 或使用 winlibs.com 提供的 MinGW 整合包（已包含 OpenSSL）
+3. 或不编译 TLS: 直接运行 `mingw32-make`（默认使用 TLS 桩）
+
+### Q: Windows 上 TLS 握手失败（SSL_accept 返回 -1）？
+A: 这是 Windows 平台特有行为 — 非阻塞监听 socket 创建的子 socket 继承非阻塞模式，
+而 OpenSSL 的 `SSL_accept()` 需要在阻塞模式下工作。解决方案：
+1. 确保 `tls_server_wrap()` 在调用 `SSL_accept()` 前调用 `set_blocking(fd)`
+2. 该修复已在 `server/src/tls_server.c` 中实现，详见 [`server/include/platform_compat.h`](../server/include/platform_compat.h) 中的 `set_blocking()` 函数
+
+### Q: 运行 TLS 服务器时报 "无法加载 DLL"？ (Windows)
+A: 这是因为 OpenSSL DLL (`libssl-3-x64.dll`, `libcrypto-3-x64.dll`) 不在 PATH 中。
+解决方案：
+```cmd
+:: 将 MinGW 的 bin 目录加入 PATH
+set PATH=D:\mys32\mingw64\bin;%PATH%
+:: 然后重新运行服务器
+out\chrono-server.exe --port 8443 --tls-cert certs\server.crt --tls-key certs\server.key
+```
 
 ### Q: 如何交叉编译？
 A: 当前不支持交叉编译。请直接在目标平台上构建。

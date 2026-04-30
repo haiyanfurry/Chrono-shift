@@ -9,6 +9,7 @@
 
 #include "http_server.h"
 #include "platform_compat.h"
+#include "tls_server.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -77,6 +78,7 @@ typedef struct Connection {
     uint64_t last_activity_ms;
     struct Connection* next;
     struct Connection* prev;
+    void* ssl;                     /* TLS: SSL* 对象, NULL=纯文本 */
 } Connection;
 
 /* 服务器上下文 */
@@ -266,6 +268,12 @@ void http_server_stop(void)
 #endif
 
     net_cleanup();
+
+    /* 清理 TLS (如果启用) */
+    if (tls_server_is_enabled()) {
+        tls_server_cleanup();
+    }
+
     fprintf(stdout, "[INFO] HTTP 服务器已停止\n");
 }
 
@@ -394,15 +402,32 @@ static int handle_accept(void)
             break;
         }
 
-        set_nonblocking(client_fd);
         int opt = 1;
         setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY,
                    (const char*)&opt, sizeof(opt));
+
+        /* TLS 握手需要在阻塞模式下进行, 之后再设为非阻塞 */
+        if (!tls_server_is_enabled()) {
+            set_nonblocking(client_fd);
+        }
 
         Connection* conn = conn_new(client_fd);
         if (!conn) {
             close_socket(client_fd);
             continue;
+        }
+
+        /* 如果 TLS 已启用, 将连接包装为 TLS (阻塞模式完成握手) */
+        if (tls_server_is_enabled()) {
+            SSL* ssl = tls_server_wrap(client_fd);
+            if (!ssl) {
+                fprintf(stderr, "[TLS] 包装新连接失败, 拒绝连接\n");
+                conn_close(conn);
+                continue;
+            }
+            conn->ssl = (void*)ssl;
+            /* TLS 握手完成后再设为非阻塞 */
+            set_nonblocking(client_fd);
         }
 
 #ifdef PLATFORM_LINUX
@@ -431,9 +456,18 @@ static int handle_conn_read(Connection* conn)
     while (1) {
         if (conn->read_offset >= MAX_BUFFER_SIZE - 1) return -1;
 
-        ssize_t n = recv(conn->fd,
+        ssize_t n;
+        if (conn->ssl) {
+            /* TLS 加密读取 */
+            n = tls_read((SSL*)conn->ssl,
                          (char*)(conn->read_buf + conn->read_offset),
-                         MAX_BUFFER_SIZE - conn->read_offset - 1, 0);
+                         (int)(MAX_BUFFER_SIZE - conn->read_offset - 1));
+        } else {
+            /* 纯文本读取 */
+            n = recv(conn->fd,
+                     (char*)(conn->read_buf + conn->read_offset),
+                     MAX_BUFFER_SIZE - conn->read_offset - 1, 0);
+        }
 
         if (n > 0) {
             conn->read_offset += (size_t)n;
@@ -492,9 +526,18 @@ static int handle_conn_write(Connection* conn)
     if (!conn || conn->state == CONN_CLOSED) return -1;
 
     while (conn->write_offset < conn->write_total) {
-        ssize_t n = send(conn->fd,
-                         (const char*)(conn->write_buf + conn->write_offset),
-                         conn->write_total - conn->write_offset, 0);
+        ssize_t n;
+        if (conn->ssl) {
+            /* TLS 加密写入 */
+            n = tls_write((SSL*)conn->ssl,
+                          (const char*)(conn->write_buf + conn->write_offset),
+                          (int)(conn->write_total - conn->write_offset));
+        } else {
+            /* 纯文本写入 */
+            n = send(conn->fd,
+                     (const char*)(conn->write_buf + conn->write_offset),
+                     conn->write_total - conn->write_offset, 0);
+        }
         if (n > 0) {
             conn->write_offset += (size_t)n;
             continue;
@@ -682,6 +725,7 @@ static Connection* conn_new(socket_t fd)
     if (!c) return NULL;
     c->fd = fd;
     c->state = CONN_READING;
+    c->ssl = NULL;                 /* 默认纯文本 */
     c->last_activity_ms = now_ms();
     return c;
 }
@@ -689,6 +733,12 @@ static Connection* conn_new(socket_t fd)
 static void conn_close(Connection* c)
 {
     if (!c) return;
+
+    /* 关闭 TLS 连接 (如果存在) */
+    if (c->ssl) {
+        tls_close((SSL*)c->ssl);
+        c->ssl = NULL;
+    }
 
 #ifdef PLATFORM_LINUX
     if (c->fd >= 0)

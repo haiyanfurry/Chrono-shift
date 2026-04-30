@@ -111,44 +111,80 @@
 | 平台 | 编译器 | 依赖 |
 |------|--------|------|
 | **Linux** | GCC ≥ 4.8 | `libpthread`, `libm` |
-| **Windows** | MinGW-w64 GCC | WinSock2 (`-lws2_32`) |
+| **Windows** | MinGW-w64 GCC | WinSock2 (`-lws2_32`), OpenSSL DLL (`D:\mys32\mingw64\bin`) |
 
 **可选依赖**
+- **OpenSSL** (≥ 1.1.0): TLS/HTTPS 加密传输支持（`make HAS_TLS=1`）
 - **Rust** (≥ 1.70): 编译安全模块 (密码哈希 + JWT)
 - **NSIS** (≥ 3.0): 制作 Windows 安装包
 - **bash**: 运行 shell 测试脚本
 
 ### 编译构建
 
-**1. 服务端**
+**1. 服务端 (使用 Makefile，推荐)**
 
 ```bash
 cd server
 
-# Linux
+# 默认编译（无 TLS 加密，使用 TLS 桩，无需 OpenSSL）
+make
+
+# 启用 TLS 加密（需要安装 OpenSSL 开发库）
+make HAS_TLS=1
+
+# 生成自签名测试证书（开发/测试用）
+openssl req -x509 -newkey rsa:2048 \
+  -keyout certs/server.key -out certs/server.crt \
+  -days 365 -nodes \
+  -subj "/CN=127.0.0.1" \
+  -addext "subjectAltName=IP:127.0.0.1"
+
+# 编译测试工具
+make debug-cli
+make stress-test
+
+# 清理编译产物
+make clean
+```
+
+**手动编译 (不使用 Makefile)**
+
+```bash
+cd server
+
+# Linux (启用 TLS，需要 -DHAS_TLS)
+gcc -std=c99 -Wall -Wextra -Iinclude -DHAS_TLS \
+    src/*.c -o build/chrono-server -lpthread -lm -lssl -lcrypto
+
+# Linux (无 TLS，编译 tls_stub.c 代替 tls_server.c)
 gcc -std=c99 -Wall -Wextra -Iinclude \
-    src/main.c src/http_server.c src/websocket.c \
-    src/database.c src/user_handler.c src/message_handler.c \
-    src/community_handler.c src/file_handler.c src/utils.c \
-    src/json_parser.c src/protocol.c \
+    $(filter-out src/tls_server.c, $(wildcard src/*.c)) \
     -o build/chrono-server -lpthread -lm
 
-# Windows (MinGW)
+# Windows (MinGW，启用 TLS，需要 MinGW 版 OpenSSL)
+gcc -std=c99 -Wall -Wextra -Iinclude -DHAS_TLS \
+    src/*.c -o build/chrono-server.exe -lws2_32 -lssl -lcrypto
+
+# Windows (MinGW，无 TLS)
 gcc -std=c99 -Wall -Wextra -Iinclude \
-    src/main.c src/http_server.c src/websocket.c \
-    src/database.c src/user_handler.c src/message_handler.c \
-    src/community_handler.c src/file_handler.c src/utils.c \
-    src/json_parser.c src/protocol.c src/rust_stubs.c \
+    $(filter-out src/tls_server.c, $(wildcard src/*.c)) \
     -o build/chrono-server.exe -lws2_32
 ```
+
+> **TLS 说明**: 项目支持条件编译 — `tls_server.c`（真实 OpenSSL）和 `tls_stub.c`（空桩）。不指定 `HAS_TLS` 时自动使用桩实现，无需 OpenSSL。
 
 **2. 测试工具**
 
 ```bash
 cd server
 
-# CLI 调试工具
-gcc -std=c99 -Wall -Iinclude tools/debug_cli.c -o build/debug_cli -lws2_32
+# CLI 调试工具 (启用 TLS)
+gcc -std=c99 -Wall -Iinclude tools/debug_cli.c -Iinclude \
+    -DHAS_TLS -o build/debug_cli -lws2_32 -lssl -lcrypto
+
+# CLI 调试工具 (无 TLS)
+gcc -std=c99 -Wall -Iinclude tools/debug_cli.c -Iinclude \
+    -o build/debug_cli -lws2_32
 
 # 压力测试工具
 gcc -std=c99 -Wall -Iinclude tools/stress_test.c -o build/stress_test -lws2_32 -lm
@@ -159,24 +195,20 @@ gcc -std=c99 -Wall -Iinclude tools/stress_test.c -o build/stress_test -lws2_32 -
 ```bash
 cd server/security
 cargo build --release
-# 生成的 libchrono_security.a 需链接到服务端
-```
-
-**4. 使用 Makefile (Linux)**
-
-```bash
-cd server
-make              # 编译服务端
-make debug-cli    # 编译调试工具
-make stress-test  # 编译压力测试
-make clean        # 清理
+# 生成的 libchrono_security.a/.lib 自动被 Makefile 检测并链接
 ```
 
 ### 运行服务器
 
 ```bash
 cd server
+
+# HTTP 模式（默认）
 ./build/chrono-server --port 8080 --db ./data/db/chrono.db
+
+# HTTPS 模式（需提供 TLS 证书和私钥）
+./build/chrono-server --port 8080 --db ./data/db/chrono.db \
+    --tls-cert ./certs/server.crt --tls-key ./certs/server.key
 ```
 
 **命令行选项**
@@ -187,9 +219,21 @@ cd server
 | `--db` | `./data/db/chrono.db` | 数据库路径 |
 | `--storage` | `./data/storage` | 文件存储路径 |
 | `--log-level` | 1 | 日志级别 (0-3) |
+| `--tls-cert` | - | TLS 证书路径 (PEM) |
+| `--tls-key` | - | TLS 私钥路径 (PEM) |
 | `--help` | - | 显示帮助信息 |
 
-启动后访问: `http://localhost:8080` (Web UI)
+> **注意**: `--tls-cert` 和 `--tls-key` 必须同时指定才能启用 HTTPS。不指定则运行纯 HTTP 模式。
+>
+> **Windows 注意**: 运行 TLS 版服务器前需将 OpenSSL DLL 目录加入 PATH:
+> ```cmd
+> set PATH=D:\mys32\mingw64\bin;%PATH%
+> build\chrono-server.exe --port 8443 --tls-cert certs\server.crt --tls-key certs\server.key
+> ```
+
+启动后访问:
+- HTTP: `http://localhost:8080` (Web UI)
+- HTTPS: `https://localhost:8080` (需信任自签名证书或使用受信任 CA)
 
 ### API 快速测试
 
@@ -228,6 +272,8 @@ Chrono-shift/
 │   │   ├── json_parser.c      # JSON 解析器
 │   │   ├── protocol.c         # 通信协议编码
 │   │   ├── utils.c            # 工具函数
+│   │   ├── tls_server.c       # TLS 真实实现 (OpenSSL，需 HAS_TLS)
+│   │   ├── tls_stub.c         # TLS 桩实现 (无 OpenSSL 回退)
 │   │   └── rust_stubs.c       # Rust FFI 桩函数 (测试用)
 │   ├── include/               # 头文件
 │   ├── tools/                 # 测试工具
@@ -317,17 +363,24 @@ IPC (进程间通信) 基于 WebSocket + 二进制消息帧，支持 9 种消息
 ### 编译测试
 
 ```bash
-# 服务端编译测试 (Windows)
+# 服务端编译测试 (使用 Makefile)
 cd server
-gcc -std=c99 -Wall -Iinclude src/*.c -o build/chrono-server.exe -lws2_32
 
-# 启动服务器
+# 无 TLS 模式 (默认，无需 OpenSSL)
+mingw32-make build
+
+# 启动服务器（HTTP 模式）
 build/chrono-server.exe --port 8080
 
-# 使用 curl 测试 API
-curl -X POST http://localhost:8080/api/user/register \
-  -H "Content-Type: application/json" \
-  -d "{\"username\":\"test\",\"password\":\"test123\"}"
+# 启动服务器（HTTPS 模式，需准备证书和 OpenSSL）
+make HAS_TLS=1 clean build
+
+# Windows: 需先将 OpenSSL DLL 加入 PATH
+set PATH=D:\mys32\mingw64\bin;%PATH%
+build/chrono-server.exe --port 8443 --tls-cert certs\server.crt --tls-key certs\server.key
+
+# 使用 openssl 验证 TLS 连接
+openssl s_client -connect 127.0.0.1:8443
 ```
 
 ### Shell 测试脚本 (需 bash)

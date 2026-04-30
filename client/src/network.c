@@ -14,6 +14,9 @@
 #include <winsock2.h>
 #include <windows.h>
 
+/* TLS 抽象层 (同项目 server 模块) */
+#include "../../server/include/tls_server.h"
+
 /* ============================================================
  * 常量定义
  * ============================================================ */
@@ -235,15 +238,46 @@ int net_connect(NetworkContext* ctx, const char* host, uint16_t port)
 
     strncpy(ctx->server_host, host, sizeof(ctx->server_host) - 1);
     ctx->server_port = port;
-    ctx->connected = true;
 
-    LOG_INFO("已连接到服务器: %s:%d", host, port);
+    /* TLS 模式: 在 TCP 连接之上建立 TLS 握手 */
+    if (ctx->use_tls) {
+        SSL* ssl = NULL;
+        /* 关闭原始 TCP socket — tls_client_connect 会新建 socket */
+        closesocket(ctx->sock);
+        int fd = tls_client_connect(&ssl, host, port);
+        if (fd < 0 || !ssl) {
+            LOG_ERROR("TLS 连接失败: %s:%d", host, port);
+            ctx->sock = -1;
+            ctx->connected = false;
+            return -1;
+        }
+        ctx->sock = fd;
+        ctx->ssl  = (void*)ssl;
+    }
+
+    ctx->connected = true;
+    LOG_INFO("已连接到服务器: %s:%d%s", host, port,
+             ctx->use_tls ? " (HTTPS)" : "");
+
+    return 0;
+}
+
+int net_set_tls(NetworkContext* ctx, bool enable)
+{
+    if (!ctx) return -1;
+    ctx->use_tls = enable;
+    ctx->ssl     = NULL;
+    LOG_INFO("TLS %s", enable ? "已启用" : "已禁用");
     return 0;
 }
 
 void net_disconnect(NetworkContext* ctx)
 {
     if (ctx && ctx->connected) {
+        if (ctx->ssl) {
+            tls_close((SSL*)ctx->ssl);
+            ctx->ssl = NULL;
+        }
         closesocket(ctx->sock);
         ctx->sock = -1;
         ctx->connected = false;
@@ -260,27 +294,46 @@ bool net_is_connected(NetworkContext* ctx)
  * TCP 收发辅助
  * ============================================================ */
 
-static int tcp_send_all(SOCKET sock, const uint8_t* data, size_t length)
+static int tcp_send_all(NetworkContext* ctx, const uint8_t* data, size_t length)
 {
+    if (ctx->ssl) {
+        /* TLS 加密发送 */
+        size_t sent = 0;
+        while (sent < length) {
+            int n = (int)tls_write((SSL*)ctx->ssl, data + sent, (int)(length - sent));
+            if (n < 0) return -1;
+            sent += (size_t)n;
+        }
+        return 0;
+    }
+    /* 原始 TCP 发送 */
     size_t sent = 0;
     while (sent < length) {
-        int n = send(sock, (const char*)(data + sent), (int)(length - sent), 0);
-        if (n <= 0) {
-            return -1;
-        }
+        int n = send(ctx->sock, (const char*)(data + sent), (int)(length - sent), 0);
+        if (n <= 0) return -1;
         sent += (size_t)n;
     }
     return 0;
 }
 
-static int tcp_recv_all(SOCKET sock, uint8_t* buffer, size_t length)
+static int tcp_recv_all(NetworkContext* ctx, uint8_t* buffer, size_t length)
 {
+    if (ctx->ssl) {
+        /* TLS 解密接收 */
+        size_t received = 0;
+        while (received < length) {
+            int n = (int)tls_read((SSL*)ctx->ssl, buffer + received, (int)(length - received));
+            if (n < 0) return -1;
+            if (n == 0) return -1; /* 连接关闭 */
+            received += (size_t)n;
+        }
+        return 0;
+    }
+    /* 原始 TCP 接收 */
     size_t received = 0;
     while (received < length) {
-        int n = recv(sock, (char*)(buffer + received), (int)(length - received), 0);
-        if (n <= 0) {
-            return -1;
-        }
+        int n = recv(ctx->sock, (char*)(buffer + received), (int)(length - received), 0);
+        if (n <= 0) return -1;
         received += (size_t)n;
     }
     return 0;
@@ -350,14 +403,14 @@ int net_http_request(NetworkContext* ctx, const char* method, const char* path,
     }
 
     /* 发送请求头 */
-    if (tcp_send_all(ctx->sock, (uint8_t*)request, (size_t)n) != 0) {
+    if (tcp_send_all(ctx, (uint8_t*)request, (size_t)n) != 0) {
         LOG_ERROR("发送 HTTP 请求失败");
         return -1;
     }
 
     /* 发送请求体 */
     if (body && body_len > 0) {
-        if (tcp_send_all(ctx->sock, body, body_len) != 0) {
+        if (tcp_send_all(ctx, body, body_len) != 0) {
             LOG_ERROR("发送 HTTP body 失败");
             return -1;
         }
@@ -372,8 +425,14 @@ int net_http_request(NetworkContext* ctx, const char* method, const char* path,
     char* body_start = NULL;
 
     while (buf_pos < sizeof(buffer) - 1) {
-        int n_recv = recv(ctx->sock, (char*)(buffer + buf_pos),
+        int n_recv;
+        if (ctx->ssl) {
+            n_recv = (int)tls_read((SSL*)ctx->ssl, buffer + buf_pos,
+                                   (int)(sizeof(buffer) - buf_pos - 1));
+        } else {
+            n_recv = recv(ctx->sock, (char*)(buffer + buf_pos),
                           (int)(sizeof(buffer) - buf_pos - 1), 0);
+        }
         if (n_recv <= 0) {
             break;
         }
@@ -490,7 +549,7 @@ int net_ws_connect(NetworkContext* ctx, const char* path)
         return -1;
     }
 
-    if (tcp_send_all(ctx->sock, (uint8_t*)request, (size_t)n) != 0) {
+    if (tcp_send_all(ctx, (uint8_t*)request, (size_t)n) != 0) {
         LOG_ERROR("发送 WebSocket 握手请求失败");
         return -1;
     }
@@ -500,8 +559,14 @@ int net_ws_connect(NetworkContext* ctx, const char* path)
     size_t resp_len = 0;
 
     while (resp_len < sizeof(response) - 1) {
-        int r = recv(ctx->sock, (char*)(response + resp_len),
+        int r;
+        if (ctx->ssl) {
+            r = (int)tls_read((SSL*)ctx->ssl, response + resp_len,
+                              (int)(sizeof(response) - resp_len - 1));
+        } else {
+            r = recv(ctx->sock, (char*)(response + resp_len),
                      (int)(sizeof(response) - resp_len - 1), 0);
+        }
         if (r <= 0) {
             LOG_ERROR("WebSocket 握手响应接收失败");
             return -1;
@@ -642,7 +707,7 @@ int net_ws_send(NetworkContext* ctx, const uint8_t* data, size_t length)
     }
 
     /* 发送 */
-    int result = tcp_send_all(ctx->sock, send_buf, header_len + length);
+    int result = tcp_send_all(ctx, send_buf, header_len + length);
     free(send_buf);
 
     if (result != 0) {
@@ -663,7 +728,7 @@ int net_ws_recv(NetworkContext* ctx, uint8_t* buffer, size_t buf_size, size_t* r
 
     /* --- 读取 Byte 0 (FIN + RSV + Opcode) --- */
     uint8_t byte0;
-    if (tcp_recv_all(ctx->sock, &byte0, 1) != 0) {
+    if (tcp_recv_all(ctx, &byte0, 1) != 0) {
         return -1;
     }
 
@@ -675,25 +740,29 @@ int net_ws_recv(NetworkContext* ctx, uint8_t* buffer, size_t buf_size, size_t* r
     /* 处理控制帧 */
     if (opcode == 0x8) { /* Close */
         uint8_t close_hdr[2];
-        if (tcp_recv_all(ctx->sock, close_hdr, 2) != 0) return -1;
+        if (tcp_recv_all(ctx, close_hdr, 2) != 0) return -1;
         uint16_t close_code = ((uint16_t)close_hdr[0] << 8) | close_hdr[1];
         LOG_DEBUG("WebSocket 收到 Close 帧, code=%d", close_code);
         return -1; /* 连接关闭 */
     } else if (opcode == 0x9) { /* Ping */
         /* 回复 Pong */
         uint8_t pong[] = { 0x8A, 0x00 };
-        send(ctx->sock, (const char*)pong, 2, 0);
+        if (ctx->ssl) {
+            tls_write((SSL*)ctx->ssl, pong, 2);
+        } else {
+            send(ctx->sock, (const char*)pong, 2, 0);
+        }
         return net_ws_recv(ctx, buffer, buf_size, received); /* 递归读取下一帧 */
     } else if (opcode == 0xA) { /* Pong */
         /* 忽略 Pong，继续读取 */
         uint8_t ignore_hdr;
-        tcp_recv_all(ctx->sock, &ignore_hdr, 1);
+        tcp_recv_all(ctx, &ignore_hdr, 1);
         return net_ws_recv(ctx, buffer, buf_size, received);
     }
 
     /* --- 读取 Byte 1 (Mask + Payload Length) --- */
     uint8_t byte1;
-    if (tcp_recv_all(ctx->sock, &byte1, 1) != 0) {
+    if (tcp_recv_all(ctx, &byte1, 1) != 0) {
         return -1;
     }
 
@@ -703,11 +772,11 @@ int net_ws_recv(NetworkContext* ctx, uint8_t* buffer, size_t buf_size, size_t* r
     /* 扩展长度 */
     if (payload_len == 126) {
         uint8_t ext[2];
-        if (tcp_recv_all(ctx->sock, ext, 2) != 0) return -1;
+        if (tcp_recv_all(ctx, ext, 2) != 0) return -1;
         payload_len = ((uint64_t)ext[0] << 8) | ext[1];
     } else if (payload_len == 127) {
         uint8_t ext[8];
-        if (tcp_recv_all(ctx->sock, ext, 8) != 0) return -1;
+        if (tcp_recv_all(ctx, ext, 8) != 0) return -1;
         payload_len = 0;
         for (int i = 0; i < 8; i++) {
             payload_len = (payload_len << 8) | ext[i];
@@ -722,12 +791,12 @@ int net_ws_recv(NetworkContext* ctx, uint8_t* buffer, size_t buf_size, size_t* r
     /* 读取掩码 key (如果有) */
     unsigned char mask_key[4];
     if (masked) {
-        if (tcp_recv_all(ctx->sock, mask_key, 4) != 0) return -1;
+        if (tcp_recv_all(ctx, mask_key, 4) != 0) return -1;
     }
 
     /* 读取 payload */
     if (payload_len > 0) {
-        if (tcp_recv_all(ctx->sock, buffer, (size_t)payload_len) != 0) {
+        if (tcp_recv_all(ctx, buffer, (size_t)payload_len) != 0) {
             return -1;
         }
 

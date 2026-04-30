@@ -28,6 +28,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <stdbool.h>
+
+#include "../include/tls_server.h"
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -66,10 +69,12 @@
 static struct {
     char host[256];
     int  port;
+    int  use_tls;
     int  verbose;
 } g_config = {
     .host    = DEFAULT_HOST,
     .port    = DEFAULT_PORT,
+    .use_tls = 0,
     .verbose = 0
 };
 
@@ -247,7 +252,7 @@ static socket_t tcp_connect(const char* host, int port)
     return fd;
 }
 
-/** 发送 HTTP 请求并接收响应 */
+/** 发送 HTTP/HTTPS 请求并接收响应 */
 static int http_request(
     const char* method,
     const char* path,
@@ -256,9 +261,6 @@ static int http_request(
     char* response,
     size_t resp_size)
 {
-    socket_t fd = tcp_connect(g_config.host, g_config.port);
-    if (!ISVALIDSOCKET(fd)) return -1;
-
     char request[BUFFER_SIZE];
     int len;
 
@@ -288,7 +290,6 @@ static int http_request(
 
     if (len < 0 || (size_t)len >= sizeof(request)) {
         fprintf(stderr, "[-] 请求过长\n");
-        CLOSE_SOCKET(fd);
         return -1;
     }
 
@@ -296,36 +297,89 @@ static int http_request(
         printf("[*] 发送请求:\n%s\n", request);
     }
 
-    /* 发送请求 */
-    int sent = 0;
-    while (sent < len) {
-        int n = (int)send(fd, request + sent, len - sent, 0);
-        if (n <= 0) {
-            fprintf(stderr, "[-] 发送请求失败\n");
-            CLOSE_SOCKET(fd);
+    if (g_config.use_tls) {
+        /* === HTTPS 模式: 使用 tls_client_connect === */
+        SSL* ssl = NULL;
+        if (tls_client_init(NULL) != 0) {
+            fprintf(stderr, "[-] TLS 客户端初始化失败: %s\n", tls_last_error());
             return -1;
         }
-        sent += n;
+        if (tls_client_connect(&ssl, g_config.host, (uint16_t)g_config.port) != 0) {
+            fprintf(stderr, "[-] TLS 连接 %s:%d 失败: %s\n",
+                    g_config.host, g_config.port, tls_last_error());
+            return -1;
+        }
+
+        /* 发送请求 (TLS) */
+        int sent = 0;
+        while (sent < len) {
+            int n = (int)tls_write(ssl, request + sent, (size_t)(len - sent));
+            if (n < 0) {
+                fprintf(stderr, "[-] TLS 发送失败: %s\n", tls_last_error());
+                tls_close(ssl);
+                return -1;
+            }
+            sent += n;
+        }
+
+        /* 接收响应 (TLS) */
+        size_t total = 0;
+        int n;
+        while (total < resp_size - 1) {
+            n = (int)tls_read(ssl, response + total, resp_size - 1 - total);
+            if (n < 0) {
+                fprintf(stderr, "[-] TLS 接收失败: %s\n", tls_last_error());
+                tls_close(ssl);
+                return -1;
+            }
+            if (n == 0) break; /* 连接关闭 */
+            total += (size_t)n;
+        }
+        response[total] = 0;
+
+        tls_close(ssl);
+
+        if (total == 0) {
+            fprintf(stderr, "[-] 未收到响应\n");
+            return -1;
+        }
+        return 0;
+
+    } else {
+        /* === HTTP 模式: 原始 TCP (原有逻辑) === */
+        socket_t fd = tcp_connect(g_config.host, g_config.port);
+        if (!ISVALIDSOCKET(fd)) return -1;
+
+        /* 发送请求 */
+        int sent = 0;
+        while (sent < len) {
+            int n = (int)send(fd, request + sent, len - sent, 0);
+            if (n <= 0) {
+                fprintf(stderr, "[-] 发送请求失败\n");
+                CLOSE_SOCKET(fd);
+                return -1;
+            }
+            sent += n;
+        }
+
+        /* 接收响应 */
+        size_t total = 0;
+        int n;
+        while (total < resp_size - 1) {
+            n = (int)recv(fd, response + total, resp_size - 1 - total, 0);
+            if (n <= 0) break;
+            total += (size_t)n;
+        }
+        response[total] = 0;
+
+        CLOSE_SOCKET(fd);
+
+        if (total == 0) {
+            fprintf(stderr, "[-] 未收到响应\n");
+            return -1;
+        }
+        return 0;
     }
-
-    /* 接收响应 */
-    size_t total = 0;
-    int n;
-    while (total < resp_size - 1) {
-        n = (int)recv(fd, response + total, resp_size - 1 - total, 0);
-        if (n <= 0) break;
-        total += (size_t)n;
-    }
-    response[total] = 0;
-
-    CLOSE_SOCKET(fd);
-
-    if (total == 0) {
-        fprintf(stderr, "[-] 未收到响应\n");
-        return -1;
-    }
-
-    return 0;
 }
 
 /** 从 HTTP 响应中提取 body (在 \r\n\r\n 之后) */
@@ -868,9 +922,12 @@ static int cmd_help(void)
     printf("\n");
     printf("配置:\n");
     printf("  当前服务器: %s:%d\n", g_config.host, g_config.port);
+    printf("  协议:       %s\n", g_config.use_tls ? "HTTPS" : "HTTP");
     printf("  详细模式:   %s\n", g_config.verbose ? "开" : "关");
     printf("\n");
-    printf("提示: 可用环境变量 CHRONO_HOST 和 CHRONO_PORT 修改目标服务器\n");
+    printf("提示:\n");
+    printf("  环境变量 CHRONO_HOST / CHRONO_PORT / CHRONO_TLS=1 设置目标\n");
+    printf("  connect <host> <port> [tls] 运行时切换目标\n");
     printf("\n");
     return 0;
 }
@@ -916,7 +973,14 @@ static int process_line(char* line)
     } else if (strcmp(cmd, "connect") == 0 && argc >= 3) {
         snprintf(g_config.host, sizeof(g_config.host), "%s", argv[1]);
         g_config.port = atoi(argv[2]);
-        printf("[*] 目标服务器: %s:%d\n", g_config.host, g_config.port);
+        if (argc >= 4 && (strcmp(argv[3], "tls") == 0 || strcmp(argv[3], "1") == 0)) {
+            g_config.use_tls = 1;
+        } else {
+            g_config.use_tls = 0;
+        }
+        printf("[*] 目标服务器: %s:%d (%s)\n",
+               g_config.host, g_config.port,
+               g_config.use_tls ? "HTTPS" : "HTTP");
     } else {
         fprintf(stderr, "未知命令: %s (输入 help 查看帮助)\n", cmd);
     }
@@ -941,6 +1005,10 @@ int main(int argc, char** argv)
         if (g_config.port <= 0 || g_config.port > 65535) {
             g_config.port = DEFAULT_PORT;
         }
+    }
+    const char* env_tls = getenv("CHRONO_TLS");
+    if (env_tls && (strcmp(env_tls, "1") == 0 || strcmp(env_tls, "true") == 0)) {
+        g_config.use_tls = 1;
     }
 
     /* 支持命令行直接执行: debug_cli health */
