@@ -167,6 +167,7 @@ int build_http_response(Connection* conn)
  * 路由查找
  * ============================================================ */
 
+#ifndef UNIT_TESTING
 int find_route(const char* method, const char* path, RouteEntry** entry)
 {
     for (size_t i = 0; i < s_ctx.route_count; i++) {
@@ -186,6 +187,7 @@ int find_route(const char* method, const char* path, RouteEntry** entry)
     }
     return -1;
 }
+#endif /* UNIT_TESTING */
 
 /* ============================================================
  * HTTP 头部辅助函数 (公开 API)

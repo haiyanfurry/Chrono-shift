@@ -68,6 +68,21 @@ if(WIN32)
 endif()
 
 # ============================================================
+# 单元测试 (Unity 框架, 纯 C99, 不依赖 OpenSSL)
+# ============================================================
+add_executable(chrono-test
+    tests/test_runner.c
+    tests/test_json_parser.c
+    tests/test_http_parse.c
+    src/json_parser.c
+    src/http_parse.c
+)
+target_include_directories(chrono-test PRIVATE include tests)
+target_compile_definitions(chrono-test PRIVATE UNIT_TESTING)
+target_compile_options(chrono-test PRIVATE -Wall -Wextra -pedantic)
+target_link_libraries(chrono-test PRIVATE m)
+
+# ============================================================
 # 编译选项
 # ============================================================
 if(MSVC)
