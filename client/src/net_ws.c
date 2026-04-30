@@ -13,6 +13,7 @@
 /* TLS 抽象层 */
 #include "../../server/include/tls_server.h"
 #include <stdlib.h>
+#include <time.h>
 #include <string.h>
 
 /* ============================================================
