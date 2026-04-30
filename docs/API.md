@@ -1,11 +1,14 @@
 # Chrono-shift API 文档
 
+> **版本**: v0.2.0 | **更新**: 2026-04
+
 ## 基础信息
 
 - **基础URL**: `https://localhost:4443`
-- **请求格式**: `application/json`
+- **请求格式**: `application/json` (部分文件接口使用 `multipart/form-data`)
 - **响应格式**: `application/json`
 - **传输加密**: HTTPS-only (TLS 1.3)，纯 HTTP 已移除
+- **处理器模块**: [`user_handler.c`](../server/src/user_handler.c) · [`message_handler.c`](../server/src/message_handler.c) · [`community_handler.c`](../server/src/community_handler.c) · [`file_handler.c`](../server/src/file_handler.c)
 
 ## 认证
 
@@ -119,7 +122,15 @@ JWT 令牌通过 [`POST /api/user/login`](#post-apiuserlogin) 获取，有效期
 { "status": "ok", "message": "好友请求已发送" }
 ```
 
+### 好友系统补充说明
+
+好友关系通过 [`user_handler.c`](../server/src/user_handler.c) 管理，底层使用 [`database.c`](../server/src/database.c) 的 `db_add_friend()` / `db_get_friends()` 接口。好友请求存储在数据库的 `friends` 目录中。
+
+---
+
 ### 2. 消息系统
+
+消息系统由 [`message_handler.c`](../server/src/message_handler.c) 实现，支持 HTTP REST API 和 WebSocket 实时推送。
 
 #### POST /api/message/send
 发送消息（需要认证）。
@@ -136,21 +147,45 @@ JWT 令牌通过 [`POST /api/user/login`](#post-apiuserlogin) 获取，有效期
 ```
 
 #### GET /api/message/list?user_id=X&offset=0&limit=50
-获取与指定用户的消息历史（需要认证）。
+获取与指定用户的消息历史（需要认证）。支持分页。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `user_id` | int | 是 | 对方用户 ID |
+| `offset` | int | 否 | 偏移量 (默认 0) |
+| `limit` | int | 否 | 每页数量 (默认 50，最大 200) |
 
 ```json
 // Response
 { "status": "ok", "data": { "messages": [{ "message_id": 1, "from_user_id": 1, "to_user_id": 2, "content": "...", "created_at": "..." }], "has_more": false } }
 ```
 
+### WebSocket 消息推送
+
+WebSocket 连接建立后，新消息会实时推送给在线接收方。消息格式与 HTTP API 返回一致。
+
+- **WebSocket 端点**: `wss://localhost:4443/ws`
+- **握手**: 通过 HTTP Upgrade 机制，需在查询参数中附带 JWT Token
+- **帧格式**: 标准 RFC 6455 WebSocket 帧 (text 帧，JSON payload)
+
+详见 [`websocket.c`](../server/src/websocket.c) 和 [`debug_cli.c`](../server/tools/debug_cli.c) 的 `ws` 命令实现。
+
 ### 3. 文件服务
+
+文件系统由 [`file_handler.c`](../server/src/file_handler.c) 实现，支持文件上传、下载、静态文件服务、头像管理。
+
+**安全机制**:
+- 扩展名白名单 (20+ 种文件类型)
+- 路径穿越防护 (路径规范化 + `../` 检测)
+- 文件魔数校验 (头像上传检测真实 PNG/JPEG/GIF 文件头)
+- 文件大小限制 (最大 50MB)
 
 #### POST /api/file/upload
 上传文件（需要认证）。请求格式为 `multipart/form-data`。
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `file` | File | 上传的文件 |
+| 字段 | 类型 | 说明 | 限制 |
+|------|------|------|------|
+| `file` | File | 上传的文件 | ≤ 50MB，扩展名白名单校验 |
 
 ```json
 // Response (201 Created)
@@ -158,24 +193,79 @@ JWT 令牌通过 [`POST /api/user/login`](#post-apiuserlogin) 获取，有效期
 ```
 
 #### GET /api/file/*
-下载文件。公开可访问（头像、分享文件等）。
+静态文件服务。支持路径格式:
+- `/api/file/uploads/<file_id>/<filename>` — 用户上传文件
+- `/api/file/avatars/<user_id>.jpg` — 用户头像
+- 自动 MIME 类型检测 (支持 20+ 扩展名映射)
+
+无需认证，公开可访问。
 
 #### POST /api/avatar/upload
 上传头像（需要认证）。请求格式为 `multipart/form-data`。
+
+| 字段 | 类型 | 说明 | 限制 |
+|------|------|------|------|
+| `file` | File | 头像图片 | 图片文件，魔数校验 |
 
 ```json
 // Response
 { "status": "ok", "data": { "avatar_url": "/api/file/avatars/1.jpg" } }
 ```
 
+**支持的文件类型** (扩展名白名单):
+`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `bmp`, `ico`, `txt`, `pdf`, `doc`, `docx`, `xls`, `xlsx`, `zip`, `tar`, `gz`, `mp3`, `mp4`, `webm`
+
 ### 4. 社区模板
 
+社区模板系统由 [`community_handler.c`](../server/src/community_handler.c) 实现，支持模板上传、下载、列表查询和应用。
+
+模板是 CSS 主题文件，用户上传后可在社区中共享。应用模板会替换客户端 UI 的 CSS 变量。
+
 #### GET /api/templates?offset=0&limit=20
-获取模板列表。
+获取模板列表（无需认证）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `offset` | int | 否 | 偏移量 (默认 0) |
+| `limit` | int | 否 | 每页数量 (默认 20，最大 100) |
 
 ```json
 // Response
-{ "status": "ok", "data": { "templates": [...], "has_more": false } }
+{ "status": "ok", "data": { "templates": [{ "id": 1, "name": "深色主题", "author_id": 1, "download_url": "/api/templates/download?id=1" }], "has_more": false } }
+```
+
+#### POST /api/templates/upload
+上传模板（需要认证）。
+
+```json
+// Request
+{ "name": "深色主题", "css_content": ":root { --primary: #333; }" }
+
+// Response (201 Created)
+{ "status": "ok", "data": { "template_id": 1 } }
+```
+
+#### GET /api/templates/download?id=X
+下载模板 CSS 内容（无需认证）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `id` | int | 是 | 模板 ID |
+
+```json
+// Response
+{ "status": "ok", "data": { "id": 1, "name": "深色主题", "css_content": ":root { ... }" } }
+```
+
+#### POST /api/templates/apply
+应用模板（需要认证）。将模板应用到当前用户。
+
+```json
+// Request
+{ "template_id": 1 }
+
+// Response
+{ "status": "ok", "message": "模板已应用" }
 ```
 
 ## HTTP 状态码说明
@@ -184,7 +274,17 @@ JWT 令牌通过 [`POST /api/user/login`](#post-apiuserlogin) 获取，有效期
 |--------|------|
 | `200 OK` | 请求成功 |
 | `201 Created` | 资源创建成功 |
-| `400 Bad Request` | 请求参数错误 |
-| `401 Unauthorized` | 未认证或令牌无效 |
-| `404 Not Found` | 资源不存在 |
+| `400 Bad Request` | 请求参数错误 (JSON 解析失败、缺少必填字段) |
+| `401 Unauthorized` | 未认证或令牌无效/过期 |
+| `403 Forbidden` | 权限不足 (CSRF 检测、非法操作) |
+| `404 Not Found` | 资源不存在 (用户/消息/文件/模板) |
+| `413 Payload Too Large` | 请求体过大 (文件上传超限) |
 | `500 Internal Server Error` | 服务器内部错误 |
+
+## 测试脚本
+
+| 脚本 | 覆盖接口 | 运行方式 |
+|------|---------|---------|
+| [`api_verification_test.sh`](../tests/api_verification_test.sh) | 全部 API + 文件/好友/模板 CRUD | `bash tests/api_verification_test.sh` |
+| [`security_pen_test.sh`](../tests/security_pen_test.sh) | 安全测试 (含 CSRF/SSRF) | `bash tests/security_pen_test.sh` |
+| [`loopback_test.sh`](../tests/loopback_test.sh) | 端到端 14 步全链路 | `bash tests/loopback_test.sh` |

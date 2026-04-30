@@ -1,8 +1,10 @@
 # Chrono-shift 架构设计文档
 
+> **版本**: v0.2.0 | **更新**: 2026-04
+
 ## 项目概述
 
-一款面向二次元用户的社交即时通讯软件，类似 QQ 风格，支持用户更换社区模板背景。服务端负责用户数据、消息和模板资源的存储与管理。
+一款面向二次元用户的社交即时通讯软件，**QQ 风格用户界面**（纯白背景、`#12B7F5` 蓝色主色调、`#9EEA6A` 绿色自聊气泡），支持用户更换社区模板背景。服务端负责用户数据、消息、文件存储和模板资源的管理。
 
 ---
 
@@ -16,7 +18,7 @@
 | **客户端宿主** | C99 + WebView2 | 窗口管理、IPC 通信、系统集成 |
 | **构建系统** | CMake + Cargo + Makefile | 多语言混合编译 |
 | **安装包** | NSIS v3.12 | Windows 安装程序 |
-| **数据库** | SQLite3 (C library) | 轻量级嵌入式数据库 |
+| **数据库** | 文件数据库 (JSON 目录存储) | 轻量级无依赖文件存储 |
 | **目标平台** | Windows 10 / Windows 11 | 仅 64 位 |
 
 ---
@@ -29,7 +31,7 @@ flowchart TB
         direction TB
         S_CORE["C99 后端核心<br/>HTTP/WebSocket/Database"]
         S_RUST["Rust 安全模块<br/>加密/认证/JWT"]
-        S_DB[("SQLite Database")]
+        S_DB[("JSON 文件数据库")]
         S_FS[("文件存储<br/>模板/图片/附件")]
         
         S_CORE --- S_RUST
@@ -100,9 +102,16 @@ Chrono-shift/
 │   │       ├── password.rs          # 密码哈希(Argon2)
 │   │       └── key_mgmt.rs          # 密钥管理
 │   │
-│   └── data/                        # 运行时数据目录
-│       ├── db/                      # 数据库文件
-│       └── storage/                 # 用户上传文件
+│       └── data/                        # 运行时数据目录
+│           ├── db/                      # 文件数据库 (JSON 目录)
+│           │   └── chrono.db/
+│           │       ├── next_id.txt
+│           │       ├── users/
+│           │       ├── messages/
+│           │       └── friends/
+│           └── storage/                 # 用户上传文件
+│               ├── uploads/
+│               └── avatars/
 │
 ├── client/                          # 客户端
 │   ├── CMakeLists.txt               # CMake 构建配置
@@ -291,32 +300,72 @@ flowchart LR
 3. 社区模板商城
 4. 个人设置
 
-### 4. 数据库设计 (Server SQLite)
+### 4. 数据库设计 (Server 文件数据库)
+
+使用 **JSON 文件数据库**，每个表存储为一个目录，每条记录为一个 JSON 文件:
 
 ```
-users:           id, username, password_hash, nickname, avatar, created_at
-messages:        id, from_user, to_user, content_encrypted, timestamp, read_status
-friends:         user_id, friend_id, status, created_at
-communities:     id, name, description, creator_id, created_at
-templates:       id, name, author_id, css_path, preview_url, downloads
-user_templates:  user_id, template_id, applied_at
+chrono.db/
+├── next_id.txt           # 全局自增 ID 计数器
+├── users/                # 用户表
+│   └── {id}.json         # {"id":1,"username":"test","password_hash":"...","nickname":"测试","avatar":"","created_at":"..."}
+├── messages/             # 消息表
+│   └── {id}.json         # {"id":1,"from_user_id":1,"to_user_id":2,"content":"hello","created_at":"..."}
+├── friends/              # 好友关系表
+│   └── {id}.json         # {"id":1,"user_id":1,"friend_id":2,"status":1,"created_at":"..."}
+└── templates/            # 模板表
+    └── {id}.json         # {"id":1,"name":"深色主题","author_id":1,"css_content":":root{...}","created_at":"..."}
 ```
+
+**数据库核心接口** (定义在 [`database.h`](../server/include/database.h)，实现在 [`database.c`](../server/src/database.c)):
+
+| 函数 | 说明 |
+|------|------|
+| `db_init()` | 初始化数据库目录结构 |
+| `db_next_id()` | 获取下一个自增 ID |
+| `db_get_user_by_id()` | 按 ID 查询用户 |
+| `db_get_user_by_username()` | 按用户名查询用户 |
+| `db_create_user()` | 创建用户 |
+| `db_update_user()` | 更新用户 |
+| `db_add_friend()` | 添加好友关系 |
+| `db_get_friends()` | 获取好友列表 |
+| `db_send_message()` | 存储消息 |
+| `db_get_messages()` | 获取消息历史 |
+| `db_create_template()` | 创建模板 |
+| `db_get_templates()` | 获取模板列表 |
+
+**实现文件**: [`database.c`](../server/src/database.c) (1214 行) — 包含完整的 JSON 序列化/反序列化、文件 I/O、ID 生成。
 
 ---
 
-## 构建流程
+## 已完成的开发阶段
 
-```mermaid
-flowchart TB
-    subgraph Build["构建流程"]
-        B1["1. 编译 Rust 安全模块<br/>cargo build --release<br/>输出 .lib/.dll"]
-        B2["2. 编译 C 后端代码<br/>CMake + GCC (C99)<br/>链接 Rust 静态库"]
-        B3["3. 打包前端资源<br/>HTML/CSS/JS 压缩"]
-        B4["4. NSIS 制作安装包"]
-        
-        B1 --> B2 --> B3 --> B4
-    end
-```
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| 1 | 项目骨架搭建 (目录结构、Rust FFI、C 基础框架、HTML 结构) | ✅ |
+| 2 | 核心通信层 (HTTP/WebSocket 服务器、客户端网络层、协议定义) | ✅ |
+| 3 | 用户系统 (注册/登录、JWT 认证、个人信息管理、好友系统) | ✅ |
+| 4 | 消息系统 (一对一即时通讯、消息存储与历史、在线状态) | ✅ |
+| 5 | 主题/模板系统 (纯白默认主题、CSS 变量主题引擎、模板上传/下载/应用) | ✅ |
+| 6 | UI QQ 风格重构 + CLI 调试增强 + 安全测试自动化 | ✅ |
+| 7 | 安全加固 (CSRF/SSRF 防护、文件类型校验、路径遍历防护) | ✅ |
+| 8 | 安装包与发布 (NSIS 安装脚本、HTTPS 迁移、文档完善) | ✅ |
+
+## 核心模块源码清单
+
+| 模块 | 文件 | 行数 | 功能 |
+|------|------|------|------|
+| HTTP 服务器 | [`http_server.c`](../server/src/http_server.c) | 911 | epoll/WSAPoll 事件驱动 |
+| TLS | [`tls_server.c`](../server/src/tls_server.c) | 384 | OpenSSL TLS 1.3 |
+| WebSocket | [`websocket.c`](../server/src/websocket.c) | 463 | WS 握手/帧编解码 |
+| 数据库 | [`database.c`](../server/src/database.c) | 1214 | JSON 文件数据库 |
+| JSON 解析 | [`json_parser.c`](../server/src/json_parser.c) | 642 | 手写 JSON 解析器 |
+| 用户管理 | [`user_handler.c`](../server/src/user_handler.c) | 405 | 注册/登录/搜索/好友 |
+| 消息服务 | [`message_handler.c`](../server/src/message_handler.c) | 618 | 发送/列表/WebSocket |
+| 社区模板 | [`community_handler.c`](../server/src/community_handler.c) | 450 | 模板 CRUD/应用 |
+| 文件服务 | [`file_handler.c`](../server/src/file_handler.c) | 738 | 上传/下载/头像/MIME |
+| CLI 调试 | [`debug_cli.c`](../server/tools/debug_cli.c) | 2317 | 命令行调试 |
+| 压力测试 | [`stress_test.c`](../server/tools/stress_test.c) | 776 | 并发压力测试 |
 
 ---
 

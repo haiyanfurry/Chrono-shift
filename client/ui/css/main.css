@@ -1,6 +1,6 @@
 /**
- * 墨竹 (Chrono-shift) 主界面布局
- * 侧边栏 + 内容区 + 底部导航 + 外部链接区域
+ * Chrono-shift QQ 风格主界面布局
+ * 左侧面板（侧边栏）+ 右侧内容区
  */
 
 #page-main {
@@ -14,7 +14,7 @@
 }
 
 /* ========================================
-   侧边栏 (Sidebar)
+   左侧面板 (Sidebar) — QQ 风格
    ======================================== */
 .sidebar {
     width: var(--sidebar-width);
@@ -22,30 +22,17 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: var(--gradient-sidebar);
+    background: var(--color-bg-primary);
     border-right: 1px solid var(--color-border);
     overflow: hidden;
     position: relative;
-}
-
-/* 侧边栏顶部装饰线 */
-.sidebar::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: var(--gradient-primary);
-    z-index: 1;
 }
 
 /* 侧边栏头部 — 用户信息 */
 .sidebar-header {
     display: flex;
     align-items: center;
-    padding: var(--spacing-lg);
-    border-bottom: 1px solid var(--color-border-light);
+    padding: var(--spacing-lg) var(--spacing-lg);
     gap: var(--spacing-sm);
     position: relative;
 }
@@ -55,10 +42,11 @@
     height: var(--avatar-size, 40px);
     border-radius: var(--border-radius-full);
     overflow: hidden;
-    border: var(--avatar-border, 2px solid var(--color-border-light));
+    border: var(--avatar-border);
     flex-shrink: 0;
     position: relative;
     transition: var(--transition-normal);
+    cursor: pointer;
 }
 
 .user-avatar:hover {
@@ -72,7 +60,7 @@
     object-fit: cover;
 }
 
-/* 在线状态指示点 */
+/* 在线状态指示点 — QQ 绿色圆点 */
 .user-avatar .status-dot {
     position: absolute;
     bottom: 0;
@@ -98,25 +86,24 @@
     margin-left: auto;
 }
 
-/* === 搜索栏 === */
+/* === 搜索栏 — QQ 风格圆角 === */
 .search-bar {
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: var(--spacing-sm) var(--spacing-lg);
     border-bottom: 1px solid var(--color-border-light);
 }
 
 .search-bar input {
-    border-radius: var(--border-radius-full);
-    padding: 8px 16px 8px 36px;
+    border-radius: var(--border-radius-md);
+    padding: 8px 16px 8px 34px;
     font-size: var(--font-size-sm);
-    background: var(--color-bg-tertiary);
-    border-color: transparent;
+    background: var(--color-bg-secondary);
+    border: 1px solid transparent;
     transition: all var(--transition-normal);
 }
 
 .search-bar input:focus {
     background: var(--color-bg-card);
     border-color: var(--color-border-focus);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.10);
 }
 
 /* 搜索图标 */
@@ -127,20 +114,20 @@
 .search-bar::before {
     content: '🔍';
     position: absolute;
-    left: calc(var(--spacing-lg) + 10px);
+    left: calc(var(--spacing-lg) + 8px);
     top: 50%;
     transform: translateY(-50%);
     font-size: 12px;
     z-index: 1;
-    opacity: 0.5;
+    opacity: 0.4;
     pointer-events: none;
 }
 
-/* === 联系人列表 === */
+/* === 联系人列表 — QQ 风格 === */
 .contact-list {
     flex: 1;
     overflow-y: auto;
-    padding: var(--spacing-sm) 0;
+    padding: var(--spacing-xs) 0;
 }
 
 .contact-item {
@@ -151,29 +138,27 @@
     transition: all var(--transition-fast);
     gap: var(--spacing-md);
     position: relative;
-    margin: 0 var(--spacing-sm);
-    border-radius: var(--border-radius-md);
+    border-radius: 0;
+    margin: 0;
 }
 
 .contact-item:hover {
-    background: var(--color-bg-hover);
+    background: var(--color-bg-secondary);
 }
 
 .contact-item.active {
     background: var(--color-bg-active);
 }
 
-/* 激活指示条 */
+/* 激活指示条 — QQ 左侧蓝条 */
 .contact-item.active::before {
     content: '';
     position: absolute;
-    left: -8px;
-    top: 50%;
-    transform: translateY(-50%);
+    left: 0;
+    top: 0;
+    bottom: 0;
     width: 3px;
-    height: 24px;
     background: var(--sidebar-indicator-color);
-    border-radius: 0 3px 3px 0;
 }
 
 .contact-item .contact-avatar {
@@ -182,11 +167,11 @@
 }
 
 .contact-item .contact-avatar img {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: var(--border-radius-full);
     object-fit: cover;
-    border: 2px solid var(--color-border-light);
+    border: 1px solid var(--color-border-light);
 }
 
 .contact-item .contact-info {
@@ -216,43 +201,46 @@
     font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
     flex-shrink: 0;
+    position: absolute;
+    top: var(--spacing-md);
+    right: var(--spacing-lg);
 }
 
 .contact-item .unread-badge {
     position: absolute;
-    top: -2px;
+    top: 0;
     right: -2px;
 }
 
 /* ========================================
-   外部网站跳转入口 (外部链接区域)
+   外部网站跳转入口
    ======================================== */
 .external-links {
-    padding: var(--spacing-sm) var(--spacing-lg);
+    padding: var(--spacing-xs) var(--spacing-lg) var(--spacing-sm);
     border-top: 1px solid var(--color-border-light);
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--color-bg-primary);
 }
 
 .external-links-label {
     font-size: 10px;
     text-transform: uppercase;
-    letter-spacing: 1.5px;
+    letter-spacing: 1px;
     color: var(--color-text-tertiary);
-    margin-bottom: var(--spacing-sm);
-    padding: 0 var(--spacing-sm);
+    margin-bottom: var(--spacing-xs);
+    padding: 0;
 }
 
 .external-links-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
 }
 
 .external-link-item {
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
     border-radius: var(--border-radius-sm);
     cursor: pointer;
     transition: all var(--transition-fast);
@@ -262,7 +250,7 @@
 }
 
 .external-link-item:hover {
-    background: var(--color-bg-hover);
+    background: var(--color-bg-secondary);
     color: var(--color-primary);
 }
 
@@ -272,7 +260,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
+    font-size: 14px;
     flex-shrink: 0;
 }
 
@@ -292,25 +280,23 @@
 }
 
 /* ========================================
-   底部导航 (Bottom Navigation)
+   底部导航 (Sidebar Footer) — QQ 风格
    ======================================== */
 .sidebar-footer {
     display: flex;
     border-top: 1px solid var(--color-border);
-    padding: var(--spacing-xs);
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(8px);
+    background: var(--color-bg-primary);
 }
 
 .btn-nav {
     flex: 1;
-    padding: var(--spacing-sm) var(--spacing-md);
+    padding: var(--spacing-sm);
     border: none;
     background: none;
     cursor: pointer;
     font-size: var(--font-size-sm);
     color: var(--color-text-tertiary);
-    border-radius: var(--border-radius-sm);
+    border-radius: 0;
     transition: all var(--transition-fast);
     font-family: var(--font-family);
     display: flex;
@@ -321,7 +307,7 @@
 }
 
 .btn-nav .nav-icon {
-    font-size: 18px;
+    font-size: 20px;
     line-height: 1;
 }
 
@@ -330,14 +316,27 @@
 }
 
 .btn-nav:hover {
-    background: var(--color-bg-hover);
+    background: var(--color-bg-secondary);
     color: var(--color-text-primary);
 }
 
 .btn-nav.active {
     color: var(--color-primary);
-    background: var(--color-primary-light);
+    background: transparent;
     font-weight: 500;
+}
+
+/* 激活指示条 — 底部蓝条 (QQ 风格) */
+.btn-nav.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 2px;
+    background: var(--color-primary);
+    border-radius: 1px;
 }
 
 /* ========================================
@@ -348,7 +347,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: var(--color-bg-primary);
+    background: var(--color-bg-secondary);
 }
 
 .content-view {

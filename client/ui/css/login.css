@@ -1,9 +1,9 @@
 /**
- * 墨竹 (Chrono-shift) 登录/注册页面
- * 靛蓝渐变背景 + 毛玻璃卡片 + 装饰浮动元素
+ * Chrono-shift QQ 风格登录/注册页面
+ * 简洁纯白背景 + 居中卡片 + QQ 蓝按钮
  */
 
-/* === 容器 — 全屏渐变背景 === */
+/* === 容器 — 浅蓝渐变背景 === */
 #page-auth {
     display: none;
     align-items: center;
@@ -17,85 +17,21 @@
     display: flex;
 }
 
-/* === 装饰浮动圆 === */
-#page-auth::before,
-#page-auth::after {
-    content: '';
-    position: absolute;
-    border-radius: 50%;
-    pointer-events: none;
-    z-index: 0;
-}
-
-#page-auth::before {
-    width: 600px;
-    height: 600px;
-    top: -200px;
-    right: -150px;
-    background: radial-gradient(circle, rgba(255,255,255,0.20) 0%, transparent 70%);
-    animation: floatGlow 8s ease-in-out infinite;
-}
-
-#page-auth::after {
-    width: 400px;
-    height: 400px;
-    bottom: -100px;
-    left: -100px;
-    background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
-    animation: floatGlow 10s ease-in-out infinite reverse;
-}
-
-@keyframes floatGlow {
-    0%, 100% { transform: translate(0, 0) scale(1); }
-    33% { transform: translate(30px, -20px) scale(1.05); }
-    66% { transform: translate(-20px, 10px) scale(0.95); }
-}
-
-/* === 第三方装饰圆（额外浮动） === */
-.auth-deco-1,
-.auth-deco-2 {
-    position: absolute;
-    border-radius: 50%;
-    pointer-events: none;
-    z-index: 0;
-}
-
-.auth-deco-1 {
-    width: 200px;
-    height: 200px;
-    top: 20%;
-    left: 10%;
-    background: radial-gradient(circle, rgba(244, 114, 182, 0.20) 0%, transparent 70%);
-    animation: floatGlow 12s ease-in-out infinite 1s;
-}
-
-.auth-deco-2 {
-    width: 300px;
-    height: 300px;
-    bottom: 15%;
-    right: 5%;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
-    animation: floatGlow 9s ease-in-out infinite 2s;
-}
-
 /* === 卡片容器 === */
 .auth-container {
     width: 100%;
-    max-width: 420px;
+    max-width: 400px;
     padding: var(--spacing-xl);
     position: relative;
     z-index: 1;
 }
 
-/* === 毛玻璃卡片 === */
+/* === QQ 风格卡片 === */
 .auth-box {
-    background: var(--glass-bg);
-    backdrop-filter: var(--glass-blur);
-    -webkit-backdrop-filter: var(--glass-blur);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--border-radius-xl);
-    padding: var(--spacing-xxl) var(--spacing-xxl) var(--spacing-xl);
-    box-shadow: var(--glass-shadow);
+    background: var(--color-bg-card);
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-xxl) var(--spacing-xl);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
     animation: fadeIn var(--transition-slow) ease-out;
 }
 
@@ -106,39 +42,35 @@
 }
 
 .auth-logo .logo-icon {
-    width: 64px;
-    height: 64px;
-    margin: 0 auto var(--spacing-md);
+    width: 72px;
+    height: 72px;
+    margin: 0 auto var(--spacing-lg);
     background: var(--gradient-primary);
-    border-radius: var(--border-radius-lg);
+    border-radius: var(--border-radius-xl);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
+    font-size: 32px;
     color: #FFFFFF;
-    box-shadow: var(--shadow-lg);
+    box-shadow: 0 4px 12px rgba(18, 183, 245, 0.25);
     transition: var(--transition-bounce);
 }
 
 .auth-logo .logo-icon:hover {
-    transform: scale(1.05) rotate(-3deg);
+    transform: scale(1.05) rotate(-5deg);
 }
 
 .auth-logo h1 {
     font-size: var(--font-size-xxl);
     font-weight: 700;
-    background: var(--gradient-primary);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--color-text-primary);
     margin-bottom: var(--spacing-xs);
-    letter-spacing: 2px;
+    letter-spacing: 1px;
 }
 
 .auth-subtitle {
-    color: var(--color-text-secondary);
+    color: var(--color-text-tertiary);
     font-size: var(--font-size-sm);
-    -webkit-text-fill-color: var(--color-text-secondary);
 }
 
 /* === 表单 === */
@@ -154,70 +86,60 @@
     margin-bottom: var(--spacing-lg);
 }
 
-.auth-form .form-group label {
-    font-weight: 500;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--spacing-xs);
-    display: block;
-}
-
 .auth-form .form-group input {
-    background: rgba(255, 255, 255, 0.8);
-    border: 1.5px solid rgba(226, 232, 240, 0.8);
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
+    background: var(--color-bg-secondary);
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-md);
+    padding: 12px 16px;
+    font-size: var(--font-size-base);
+    transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 .auth-form .form-group input:focus {
-    background: #FFFFFF;
+    background: var(--color-bg-card);
     border-color: var(--color-border-focus);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    box-shadow: none;
+}
+
+.auth-form .form-group input::placeholder {
+    color: var(--color-text-placeholder);
 }
 
 .auth-form .btn {
     margin-top: var(--spacing-sm);
-    height: 46px;
+    height: 44px;
     font-size: var(--font-size-md);
-    font-weight: 600;
-    letter-spacing: 1px;
+    font-weight: 500;
     border-radius: var(--border-radius-md);
     background: var(--gradient-primary);
     color: #FFFFFF;
     border: none;
     cursor: pointer;
     transition: all var(--transition-normal);
-    position: relative;
-    overflow: hidden;
-}
-
-.auth-form .btn::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 50%);
-    pointer-events: none;
+    letter-spacing: 0;
 }
 
 .auth-form .btn:hover {
-    box-shadow: var(--shadow-xl);
+    box-shadow: 0 4px 16px rgba(18, 183, 245, 0.30);
     transform: translateY(-1px);
 }
 
 .auth-form .btn:active {
     transform: translateY(0) scale(0.98);
+    box-shadow: none;
 }
 
 /* === 切换链接 === */
 .auth-switch {
     text-align: center;
-    margin-top: var(--spacing-xl);
+    margin-top: var(--spacing-lg);
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
 }
 
 .auth-switch a {
     color: var(--color-primary);
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
     transition: color var(--transition-fast);
 }
@@ -225,23 +147,4 @@
 .auth-switch a:hover {
     color: var(--color-primary-hover);
     text-decoration: underline;
-}
-
-/* === 输入框图标装饰（可选） === */
-.input-icon-wrap {
-    position: relative;
-}
-
-.input-icon-wrap .input-icon {
-    position: absolute;
-    left: 12px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--color-text-tertiary);
-    font-size: var(--font-size-md);
-    pointer-events: none;
-}
-
-.input-icon-wrap input {
-    padding-left: 38px !important;
 }

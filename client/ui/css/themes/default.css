@@ -1,11 +1,11 @@
 /**
- * 墨竹 (Chrono-shift) 默认主题
- * 基于 CSS 变量系统的纯白主题
- * 社区模板通过覆盖 :root 变量实现
+ * Chrono-shift 纯白默认主题
+ * QQ 风格纯白主题 — 通过覆盖 :root 变量实现
+ * 社区模板只需覆盖对应变量即可切换主题
  */
 :root {
-    /* === 微调默认主题 === */
-    --color-bg-primary: #FAFAFA;
-    --color-bg-secondary: #F1F5F9;
-    --color-bg-tertiary: #E2E8F0;
+    /* 纯白默认 — QQ 风格 */
+    --color-bg-primary: #FFFFFF;
+    --color-bg-secondary: #F5F5F5;
+    --color-bg-tertiary: #EBEBEB;
 }

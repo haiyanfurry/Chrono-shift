@@ -1,13 +1,13 @@
 /**
- * 墨竹 (Chrono-shift) 聊天界面样式
- * 不对称气泡 + 柔和阴影 + 流畅动画
+ * Chrono-shift QQ 风格聊天界面
+ * 绿色发送气泡 + 白色接收气泡 + 圆角设计
  */
 
 /* === 聊天头部 === */
 .chat-header {
     display: flex;
     align-items: center;
-    padding: 0 var(--spacing-xl);
+    padding: 0 var(--spacing-lg);
     height: var(--chat-header-height);
     border-bottom: 1px solid var(--color-border);
     background: var(--color-bg-primary);
@@ -20,7 +20,7 @@
     height: 36px;
     border-radius: var(--border-radius-full);
     object-fit: cover;
-    border: 2px solid var(--color-border-light);
+    border: 1px solid var(--color-border-light);
 }
 
 .chat-partner {
@@ -35,11 +35,11 @@
     font-weight: 400;
 }
 
-/* === 消息区域 === */
+/* === 消息区域 — QQ 浅灰背景 === */
 .chat-messages {
     flex: 1;
     overflow-y: auto;
-    padding: var(--spacing-lg) var(--spacing-xl);
+    padding: var(--spacing-lg) var(--spacing-lg);
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
@@ -54,14 +54,14 @@
     align-items: center;
     justify-content: center;
     color: var(--color-text-tertiary);
-    font-size: var(--font-size-md);
+    font-size: var(--font-size-base);
     gap: var(--spacing-md);
     background: var(--color-bg-secondary);
 }
 
 .no-chat-selected .no-chat-icon {
-    font-size: 64px;
-    opacity: 0.3;
+    font-size: 56px;
+    opacity: 0.25;
 }
 
 /* === 消息气泡 === */
@@ -70,7 +70,7 @@
     align-items: flex-start;
     gap: var(--spacing-sm);
     max-width: 75%;
-    animation: fadeInUp var(--transition-normal);
+    animation: fadeIn var(--transition-normal);
 }
 
 .message-self {
@@ -83,35 +83,39 @@
 }
 
 .message .msg-avatar {
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     border-radius: var(--border-radius-full);
     object-fit: cover;
     flex-shrink: 0;
     margin-top: 4px;
+    border: 1px solid var(--color-border-light);
 }
 
-/* 气泡本体 */
+/* 气泡本体 — QQ 风格 */
 .message-bubble {
-    padding: 10px 16px;
+    padding: 10px 14px;
     font-size: var(--font-size-base);
     line-height: 1.5;
     word-wrap: break-word;
     position: relative;
 }
 
+/* QQ 绿色发送气泡 */
 .message-self .message-bubble {
     background: var(--bubble-self-bg);
     color: var(--bubble-self-text);
     border-radius: var(--bubble-radius-self);
-    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.20);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
+/* QQ 白色接收气泡 (带浅灰边框) */
 .message-other .message-bubble {
     background: var(--bubble-other-bg);
     color: var(--bubble-other-text);
     border-radius: var(--bubble-radius-other);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    border: 1px solid #E8E8E8;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 /* 消息时间 */
@@ -119,39 +123,39 @@
     font-size: var(--font-size-xs);
     color: var(--color-text-tertiary);
     margin-top: var(--spacing-xs);
+    padding: 0 4px;
 }
 
 .message-self .message-time {
     text-align: right;
-    padding-right: 4px;
 }
 
 .message-other .message-time {
     text-align: left;
-    padding-left: 4px;
 }
 
-/* === 输入区域 === */
+/* === 输入区域 — QQ 风格 === */
 .chat-input-area {
     display: flex;
     align-items: flex-end;
-    padding: var(--spacing-md) var(--spacing-xl);
+    padding: var(--spacing-sm) var(--spacing-lg);
     border-top: 1px solid var(--color-border);
-    gap: var(--spacing-md);
+    gap: var(--spacing-sm);
     background: var(--color-bg-primary);
     flex-shrink: 0;
 }
 
 .chat-input-area textarea {
     flex: 1;
-    height: 44px;
-    max-height: 120px;
+    height: 40px;
+    max-height: 100px;
     padding: 10px 14px;
     border-radius: var(--border-radius-md);
     line-height: 1.5;
     background: var(--color-bg-secondary);
-    border-color: transparent;
+    border: 1px solid transparent;
     transition: all var(--transition-fast);
+    font-size: var(--font-size-base);
 }
 
 .chat-input-area textarea:focus {
@@ -160,10 +164,11 @@
 }
 
 .chat-input-area .btn {
-    height: 44px;
-    padding: 0 24px;
+    height: 40px;
+    padding: 0 20px;
     flex-shrink: 0;
     border-radius: var(--border-radius-md);
+    font-size: var(--font-size-base);
 }
 
 /* === 输入提示（对方正在输入） === */

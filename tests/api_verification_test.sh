@@ -213,6 +213,129 @@ run_api_test "无效路径" "GET" "/api/invalid/path" "" "" 404
 run_api_test "不支持的 HTTP 方法" "DELETE" "/api/health" "" "" 405
 
 # ============================================================
+# 2.6 文件上传/下载
+# ============================================================
+info "========== 2.6 文件系统 =========="
+echo "### 2.6 文件系统" >> "${REPORT_FILE}"
+
+run_api_test "上传文件 - 文本文件" "POST" "/api/file/upload" \
+    '{"filename":"test.txt","content":"dGVzdCBmaWxlIGNvbnRlbnQ="}' "${TEST_TOKEN}" 200
+
+# 先获取一个文件ID用于下载测试
+TOTAL=$((TOTAL+1))
+info "测试 #${TOTAL}: 获取文件列表"
+HTTP_CODE=$(curl -s -o "${REPORT_DIR}/.resp_body" -w "%{http_code}" \
+    -H "Authorization: Bearer ${TEST_TOKEN}" \
+    "${BASE_URL}/api/files")
+RESP_BODY=$(cat "${REPORT_DIR}/.resp_body" 2>/dev/null)
+FILE_ID=$(echo "${RESP_BODY}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('data',[{}])[0].get('id','') if isinstance(d.get('data'),list) else '')" 2>/dev/null || echo "")
+if [ "${HTTP_CODE}" -eq 200 ]; then
+    pass "获取文件列表 (HTTP ${HTTP_CODE})"
+    RESULT="✅ PASS"
+    if [ -n "${FILE_ID}" ]; then
+        run_api_test "下载文件" "GET" "/api/file/download?id=${FILE_ID}" "" "${TEST_TOKEN}" 200
+    fi
+else
+    fail "获取文件列表 (HTTP ${HTTP_CODE})"
+    RESULT="❌ FAIL"
+fi
+{
+    echo "### #${TOTAL}: 获取文件列表"
+    echo "- **方法**: GET"
+    echo "- **路径**: /api/files"
+    echo "- **HTTP 状态码**: ${HTTP_CODE}"
+    echo "- **结果**: ${RESULT}"
+    echo ""
+} >> "${REPORT_FILE}"
+
+run_api_test "上传头像" "POST" "/api/user/avatar/upload" \
+    '{"avatar_data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="}' "${TEST_TOKEN}" 200
+
+run_api_test "未认证 - 文件上传" "POST" "/api/file/upload" \
+    '{"filename":"hack.txt","content":"ZXZpbA=="}' "" 401
+
+# ============================================================
+# 2.7 好友系统
+# ============================================================
+info "========== 2.7 好友系统 =========="
+echo "### 2.7 好友系统" >> "${REPORT_FILE}"
+
+# 注册第二个用户用于好友测试
+TOTAL=$((TOTAL+1))
+info "测试 #${TOTAL}: 注册好友测试用户"
+HTTP_CODE=$(curl -s -o "${REPORT_DIR}/.resp_body" -w "%{http_code}" \
+    -X POST -H "Content-Type: application/json" \
+    -d '{"username":"friend_test_user","password":"Friend123456","nickname":"好友测试"}' \
+    "${BASE_URL}/api/user/register")
+RESP_BODY=$(cat "${REPORT_DIR}/.resp_body" 2>/dev/null)
+FRIEND_USER_ID=$(echo "${RESP_BODY}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('user_id',''))" 2>/dev/null || echo "")
+if [ "${HTTP_CODE}" -eq 200 ] || [ "${HTTP_CODE}" -eq 409 ]; then
+    pass "好友测试用户注册 (HTTP ${HTTP_CODE})"
+    RESULT="✅ PASS"
+else
+    fail "好友测试用户注册 (HTTP ${HTTP_CODE})"
+    RESULT="❌ FAIL"
+fi
+{
+    echo "### #${TOTAL}: 注册好友测试用户"
+    echo "- **方法**: POST"
+    echo "- **路径**: /api/user/register"
+    echo "- **HTTP 状态码**: ${HTTP_CODE}"
+    echo "- **结果**: ${RESULT}"
+    echo ""
+} >> "${REPORT_FILE}"
+
+# 如果不知道好友ID，用已存在的用户ID进行测试
+FRIEND_TEST_ID="${FRIEND_USER_ID:-1}"
+run_api_test "添加好友" "POST" "/api/friends/add" \
+    "{\"user_id1\":1,\"user_id2\":${FRIEND_TEST_ID}}" "${TEST_TOKEN}" 200
+
+run_api_test "获取好友列表" "GET" "/api/friends?id=1" "" "${TEST_TOKEN}" 200
+
+# ============================================================
+# 2.8 社区模板 CRUD
+# ============================================================
+info "========== 2.8 社区模板 =========="
+echo "### 2.8 社区模板 CRUD" >> "${REPORT_FILE}"
+
+run_api_test "创建模板" "POST" "/api/templates" \
+    '{"name":"API测试模板","description":"通过API验证创建的模板","content":"{\"primary\":\"#12B7F5\"}"}' "${TEST_TOKEN}" 200
+
+# 获取模板ID
+TOTAL=$((TOTAL+1))
+info "测试 #${TOTAL}: 获取模板列表 (含新模板)"
+HTTP_CODE=$(curl -s -o "${REPORT_DIR}/.resp_body" -w "%{http_code}" \
+    -H "Authorization: Bearer ${TEST_TOKEN}" \
+    "${BASE_URL}/api/templates?limit=100&offset=0")
+RESP_BODY=$(cat "${REPORT_DIR}/.resp_body" 2>/dev/null)
+TPL_ID=$(echo "${RESP_BODY}" | python3 -c "import sys,json; d=json.load(sys.stdin); items=d.get('data',{}).get('templates',[]) if isinstance(d.get('data'),dict) else d.get('data',[]); print(items[-1].get('id','') if items else '')" 2>/dev/null || echo "")
+if [ "${HTTP_CODE}" -eq 200 ]; then
+    pass "获取模板列表 (HTTP ${HTTP_CODE})"
+    RESULT="✅ PASS"
+else
+    fail "获取模板列表 (HTTP ${HTTP_CODE})"
+    RESULT="❌ FAIL"
+fi
+{
+    echo "### #${TOTAL}: 获取模板列表"
+    echo "- **方法**: GET"
+    echo "- **路径**: /api/templates"
+    echo "- **HTTP 状态码**: ${HTTP_CODE}"
+    echo "- **结果**: ${RESULT}"
+    echo ""
+} >> "${REPORT_FILE}"
+
+if [ -n "${TPL_ID}" ]; then
+    run_api_test "更新模板" "PUT" "/api/templates/${TPL_ID}" \
+        '{"name":"API测试模板已更新","description":"更新描述"}' "${TEST_TOKEN}" 200
+    
+    run_api_test "应用模板" "POST" "/api/templates/apply" \
+        "{\"template_id\":${TPL_ID}}" "${TEST_TOKEN}" 200
+    
+    run_api_test "删除模板" "DELETE" "/api/templates/${TPL_ID}" "" "${TEST_TOKEN}" 200
+fi
+
+# ============================================================
 # 3. 清理测试用户
 # ============================================================
 info "========== 清理测试数据 =========="

@@ -330,6 +330,109 @@ else
 fi
 
 # ========================================
+# Step 12: 文件上传与下载 (F3)
+# ========================================
+log_step "文件上传 (POST $BASE_URL/api/file/upload)"
+
+UPLOAD_RESP=$(curl -s -X POST "$BASE_URL/api/file/upload" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"filename":"loopback_test.txt","content":"bG9vcGJhY2sgdGVzdCBmaWxlIGNvbnRlbnQ="}')
+
+UPLOAD_STATUS=$(echo "$UPLOAD_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "parse_error")
+
+if [ "$UPLOAD_STATUS" = "ok" ]; then
+    FILE_ID=$(echo "$UPLOAD_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('file_id',''))" 2>/dev/null || echo "")
+    log_success "文件上传成功 (file_id: $FILE_ID)"
+    
+    # 下载文件
+    log_step "文件下载 (GET $BASE_URL/api/file/download?id=$FILE_ID)"
+    DOWNLOAD_RESP=$(curl -s "$BASE_URL/api/file/download?id=$FILE_ID" \
+        -H "Authorization: Bearer $TOKEN")
+    DOWNLOAD_STATUS=$(echo "$DOWNLOAD_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "parse_error")
+    if [ "$DOWNLOAD_STATUS" = "ok" ]; then
+        log_success "文件下载成功"
+    else
+        log_fail "文件下载失败: $DOWNLOAD_RESP"
+    fi
+else
+    log_fail "文件上传失败: $UPLOAD_RESP"
+fi
+
+# ========================================
+# Step 13: 社区模板 CRUD (F3)
+# ========================================
+log_step "创建模板 (POST $BASE_URL/api/templates)"
+
+TPL_CREATE_RESP=$(curl -s -X POST "$BASE_URL/api/templates" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"回环测试模板","description":"通过回环测试自动创建","content":"{\"primary\":\"#12B7F5\",\"background\":\"#FFFFFF\"}"}')
+
+TPL_CREATE_STATUS=$(echo "$TPL_CREATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "parse_error")
+
+if [ "$TPL_CREATE_STATUS" = "ok" ]; then
+    TPL_ID=$(echo "$TPL_CREATE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('template_id',''))" 2>/dev/null || echo "")
+    log_success "模板创建成功 (template_id: $TPL_ID)"
+    
+    # 应用模板
+    log_step "应用模板 (POST $BASE_URL/api/templates/apply)"
+    TPL_APPLY_RESP=$(curl -s -X POST "$BASE_URL/api/templates/apply" \
+        -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"template_id\":$TPL_ID}")
+    TPL_APPLY_STATUS=$(echo "$TPL_APPLY_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "parse_error")
+    if [ "$TPL_APPLY_STATUS" = "ok" ]; then
+        log_success "模板应用成功"
+    else
+        log_fail "模板应用失败: $TPL_APPLY_RESP"
+    fi
+else
+    log_fail "模板创建失败: $TPL_CREATE_RESP"
+fi
+
+# 列出模板
+log_step "获取模板列表 (GET $BASE_URL/api/templates)"
+TPL_LIST_RESP=$(curl -s "$BASE_URL/api/templates?limit=10&offset=0" \
+    -H "Authorization: Bearer $TOKEN")
+TPL_LIST_STATUS=$(echo "$TPL_LIST_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "parse_error")
+if [ "$TPL_LIST_STATUS" = "ok" ]; then
+    TPL_COUNT=$(echo "$TPL_LIST_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); items=d.get('data',{}).get('templates',[]) if isinstance(d.get('data'),dict) else d.get('data',[]); print(len(items))" 2>/dev/null || echo "0")
+    log_success "获取模板列表成功 (共 $TPL_COUNT 个模板)"
+else
+    log_fail "获取模板列表失败: $TPL_LIST_RESP"
+fi
+
+# ========================================
+# Step 14: 好友系统测试 (F3)
+# ========================================
+log_step "添加好友 (POST $BASE_URL/api/friends/add)"
+
+FRIEND_ADD_RESP=$(curl -s -X POST "$BASE_URL/api/friends/add" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"user_id1\":\"$USER_ID\",\"user_id2\":1}")
+
+FRIEND_ADD_STATUS=$(echo "$FRIEND_ADD_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "parse_error")
+
+if [ "$FRIEND_ADD_STATUS" = "ok" ]; then
+    log_success "好友添加成功"
+else
+    log_fail "好友添加失败: $FRIEND_ADD_RESP"
+fi
+
+log_step "获取好友列表 (GET $BASE_URL/api/friends?id=$USER_ID)"
+FRIEND_LIST_RESP=$(curl -s "$BASE_URL/api/friends?id=$USER_ID" \
+    -H "Authorization: Bearer $TOKEN")
+FRIEND_LIST_STATUS=$(echo "$FRIEND_LIST_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "parse_error")
+if [ "$FRIEND_LIST_STATUS" = "ok" ]; then
+    FRIEND_COUNT=$(echo "$FRIEND_LIST_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); items=d.get('data',{}).get('friends',[]) if isinstance(d.get('data'),dict) else d.get('data',[]); print(len(items))" 2>/dev/null || echo "0")
+    log_success "获取好友列表成功 (共 $FRIEND_COUNT 个好友)"
+else
+    log_fail "获取好友列表失败: $FRIEND_LIST_RESP"
+fi
+
+# ========================================
 # 测试完成
 # ========================================
 echo ""

@@ -408,6 +408,176 @@ run_test \
     "ok"
 
 # ============================================================
+# 测试类别 8: CSRF 测试
+# ============================================================
+echo ""
+info "========== 类别 8: CSRF 测试 =========="
+echo "### 8. CSRF 测试" >> "${REPORT_FILE}"
+
+# 8.1 缺少 Origin/Referer 头的状态变更请求
+run_test \
+    "CSRF - 缺少 Origin 头的状态变更" \
+    "POST" "/api/user/update" \
+    '{"nickname":"csrf_test"}' \
+    401 403 \
+    "ok"
+
+# 8.2 跨域伪造请求 (模拟第三方网站发起的请求)
+run_test \
+    "CSRF - 跨域状态变更" \
+    "POST" "/api/message/send" \
+    '{"to_user_id":999,"content":"CSRF 攻击消息"}' \
+    401 403 \
+    "ok"
+
+# 8.3 CSRF Token 验证测试 - 空 Token
+run_test \
+    "CSRF - 空 CSRF Token" \
+    "POST" "/api/user/update" \
+    '{"csrf_token":"","nickname":"csrf_test"}' \
+    401 403 \
+    "ok"
+
+# 8.4 CSRF Token 验证测试 - 无效 Token
+run_test \
+    "CSRF - 无效 CSRF Token" \
+    "POST" "/api/templates/apply" \
+    '{"csrf_token":"invalid_csrf_token","template_id":1}' \
+    401 403 \
+    "ok"
+
+# 8.5 Content-Type 绕过测试 (使用 text/plain 提交)
+TOTAL=$((TOTAL+1))
+info "测试 #${TOTAL}: CSRF - text/plain Content-Type 绕过"
+HTTP_CODE=$(curl -s -o "${REPORT_DIR}/.resp_body" -w "%{http_code}" \
+    -X POST -H "Content-Type: text/plain" \
+    -d '{"to_user_id":1,"content":"CSRF text/plain 攻击"}' \
+    "${BASE_URL}/api/message/send")
+if [ "${HTTP_CODE}" -ge 401 ] && [ "${HTTP_CODE}" -le 403 ]; then
+    pass "CSRF - text/plain 绕过 (HTTP ${HTTP_CODE})"
+    RESULT="✅ PASS"
+else
+    fail "CSRF - text/plain 绕过 (HTTP ${HTTP_CODE})"
+    RESULT="❌ FAIL"
+fi
+{
+    echo "### #${TOTAL}: CSRF - text/plain Content-Type 绕过"
+    echo "- **方法**: POST"
+    echo "- **路径**: /api/message/send"
+    echo "- **Content-Type**: text/plain"
+    echo "- **HTTP 状态码**: ${HTTP_CODE}"
+    echo "- **期望范围**: 401-403"
+    echo "- **结果**: ${RESULT}"
+    echo ""
+} >> "${REPORT_FILE}"
+
+# ============================================================
+# 测试类别 9: SSRF 测试
+# ============================================================
+echo ""
+info "========== 类别 9: SSRF 测试 =========="
+echo "### 9. SSRF 测试" >> "${REPORT_FILE}"
+
+# 9.1 内部 IP 地址访问
+run_test \
+    "SSRF - 尝试访问 127.0.0.1" \
+    "POST" "/api/templates/download" \
+    '{"url":"http://127.0.0.1:4443/api/health"}' \
+    400 403 \
+    "ok"
+
+# 9.2 内网 IP 段访问
+run_test \
+    "SSRF - 尝试访问 10.0.0.1" \
+    "POST" "/api/templates/download" \
+    '{"url":"http://10.0.0.1/admin"}' \
+    400 403 \
+    "ok"
+
+# 9.3 AWS 元数据端点
+run_test \
+    "SSRF - AWS 元数据端点" \
+    "POST" "/api/templates/download" \
+    '{"url":"http://169.254.169.254/latest/meta-data/"}' \
+    400 403 \
+    "ok"
+
+# 9.4 URL 协议限制测试 - file:// 协议
+run_test \
+    "SSRF - file:// 协议" \
+    "POST" "/api/templates/download" \
+    '{"url":"file:///etc/passwd"}' \
+    400 403 \
+    "ok"
+
+# 9.5 URL 重定向 SSRF
+run_test \
+    "SSRF - URL 重定向绕过" \
+    "POST" "/api/templates/download" \
+    '{"url":"http://evil.com/redirect?url=http://127.0.0.1:4443/"}' \
+    400 403 \
+    "ok"
+
+# 9.6 DNS 重绑定 SSRF 模拟
+run_test \
+    "SSRF - DNS 重绑定模式" \
+    "POST" "/api/templates/download" \
+    '{"url":"http://1e100.127.0.0.1.nip.io:4443/"}' \
+    400 403 \
+    "ok"
+
+# ============================================================
+# 测试类别 10: HTTPS 降级攻击测试
+# ============================================================
+echo ""
+info "========== 类别 10: HTTPS 降级攻击测试 =========="
+echo "### 10. HTTPS 降级攻击测试" >> "${REPORT_FILE}"
+
+# 10.1 HTTP 明文访问
+TOTAL=$((TOTAL+1))
+info "测试 #${TOTAL}: HTTPS 降级 - HTTP 明文访问"
+HTTP_CODE=$(curl -s -o "${REPORT_DIR}/.resp_body" -w "%{http_code}" \
+    "http://${HOST}:${PORT}/api/health" --connect-timeout 5 2>/dev/null || echo "000")
+if [ "${HTTP_CODE}" = "000" ] || [ "${HTTP_CODE}" -ge 400 ]; then
+    pass "HTTPS 降级 - HTTP 明文访问被拒绝 (HTTP ${HTTP_CODE})"
+    RESULT="✅ PASS"
+else
+    fail "HTTPS 降级 - HTTP 明文访问未拒绝 (HTTP ${HTTP_CODE})"
+    RESULT="❌ FAIL"
+fi
+{
+    echo "### #${TOTAL}: HTTPS 降级 - HTTP 明文访问"
+    echo "- **方法**: GET"
+    echo "- **路径**: http://${HOST}:${PORT}/api/health"
+    echo "- **HTTP 状态码**: ${HTTP_CODE}"
+    echo "- **期望**: 连接失败或 4xx"
+    echo "- **结果**: ${RESULT}"
+    echo ""
+} >> "${REPORT_FILE}"
+
+# 10.2 TLS 1.0/1.1 降级测试 (使用 curl 强制低版本)
+TOTAL=$((TOTAL+1))
+info "测试 #${TOTAL}: HTTPS 降级 - TLS 1.0/1.1"
+HTTP_CODE=$(curl -s -o "${REPORT_DIR}/.resp_body" -w "%{http_code}" \
+    --tlsv1.0 "${BASE_URL}/api/health" --connect-timeout 5 2>/dev/null || echo "000")
+if [ "${HTTP_CODE}" = "000" ]; then
+    pass "HTTPS 降级 - TLS 1.0 连接被拒绝"
+    RESULT="✅ PASS"
+else
+    fail "HTTPS 降级 - TLS 1.0 连接未拒绝 (HTTP ${HTTP_CODE})"
+    RESULT="❌ FAIL"
+fi
+{
+    echo "### #${TOTAL}: HTTPS 降级 - TLS 1.0"
+    echo "- **方法**: GET"
+    echo "- **路径**: ${BASE_URL}/api/health"
+    echo "- **HTTP 状态码**: ${HTTP_CODE}"
+    echo "- **期望**: 连接失败"
+    echo "- **结果**: ${RESULT}"
+    echo ""
+} >> "${REPORT_FILE}"
+
+# ============================================================
 # 生成汇总报告
 # ============================================================
 echo ""

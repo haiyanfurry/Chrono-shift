@@ -10,6 +10,7 @@
 #include "server.h"
 #include "database.h"
 #include "http_server.h"
+#include "file_handler.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +54,54 @@ int rust_verify_password(const char* password, const char* hash)
 /* ============================================================
  * JWT Token 生成/验证 (桩实现)
  * ============================================================ */
+
+/* JWT 验证: 解码 token 提取 user_id (简化版, 仅用于测试) */
+char* rust_verify_jwt(const char* token)
+{
+    if (!token) return NULL;
+
+    /* 查找第二个 '.' (payload 部分) */
+    const char* first_dot = strchr(token, '.');
+    if (!first_dot) return NULL;
+    const char* second_dot = strchr(first_dot + 1, '.');
+    if (!second_dot) return NULL;
+
+    /* payload 在 first_dot+1 到 second_dot 之间 */
+    size_t payload_len = (size_t)(second_dot - first_dot - 1);
+    if (payload_len == 0 || payload_len > 512) return NULL;
+
+    /* 简易 base64 解码 (仅处理我们的桩格式) */
+    char* decoded = (char*)malloc(payload_len + 1);
+    if (!decoded) return NULL;
+    memcpy(decoded, first_dot + 1, payload_len);
+    decoded[payload_len] = '\0';
+
+    /* 提取 "sub":"..." 中的 user_id */
+    const char* sub_key = "\"sub\":\"";
+    const char* sub_start = strstr(decoded, sub_key);
+    if (!sub_start) {
+        free(decoded);
+        return NULL;
+    }
+    sub_start += strlen(sub_key);
+    const char* sub_end = strchr(sub_start, '"');
+    if (!sub_end) {
+        free(decoded);
+        return NULL;
+    }
+
+    size_t uid_len = (size_t)(sub_end - sub_start);
+    char* uid_str = (char*)malloc(uid_len + 1);
+    if (!uid_str) {
+        free(decoded);
+        return NULL;
+    }
+    memcpy(uid_str, sub_start, uid_len);
+    uid_str[uid_len] = '\0';
+
+    free(decoded);
+    return uid_str;
+}
 
 char* rust_generate_jwt(const char* user_id)
 {
@@ -122,6 +171,12 @@ int server_init(const ServerConfig* config)
     LOG_INFO("初始化数据库...");
     if (db_init(config->db_path) != 0) {
         LOG_ERROR("数据库初始化失败: %s", config->db_path);
+        return -1;
+    }
+
+    LOG_INFO("初始化文件存储...");
+    if (file_storage_init(config->storage_path) != 0) {
+        LOG_ERROR("文件存储初始化失败: %s", config->storage_path);
         return -1;
     }
 
