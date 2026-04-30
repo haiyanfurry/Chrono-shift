@@ -668,3 +668,37 @@ static void free_io_data(PerIoData* io_data)
 
     free(io_data);
 }
+
+/* ============================================================
+ * HTTP 头部辅助函数 (声明在 server.h)
+ * ============================================================ */
+
+const char* http_get_header_value(const char headers[64][2][1024], size_t header_count,
+                                   const char* key)
+{
+    if (!key || header_count == 0) return NULL;
+
+    for (size_t i = 0; i < header_count; i++) {
+        if (strcasecmp(headers[i][0], key) == 0) {
+            return headers[i][1];
+        }
+    }
+
+    return NULL;
+}
+
+const char* http_extract_bearer_token(const char headers[64][2][1024], size_t header_count)
+{
+    const char* auth = http_get_header_value(headers, header_count, "Authorization");
+    if (!auth) return NULL;
+
+    /* 查找 "Bearer " 前缀 */
+    const char* prefix = "Bearer ";
+    size_t prefix_len = strlen(prefix);
+
+    if (strncasecmp(auth, prefix, prefix_len) == 0) {
+        return auth + prefix_len;
+    }
+
+    return NULL;
+}

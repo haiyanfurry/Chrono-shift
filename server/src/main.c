@@ -32,6 +32,7 @@ static void set_default_config(ServerConfig* config)
     config->port = 8080;
     strncpy(config->db_path, "./data/db/chrono.db", sizeof(config->db_path) - 1);
     strncpy(config->storage_path, "./data/storage", sizeof(config->storage_path) - 1);
+    strncpy(config->jwt_secret, "chrono-shift-jwt-secret-2024", sizeof(config->jwt_secret) - 1);
     config->thread_pool_size = 4;
     config->max_connections = 1024;
     config->log_level = LOG_INFO;

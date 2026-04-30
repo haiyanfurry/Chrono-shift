@@ -219,7 +219,10 @@ document.addEventListener('DOMContentLoaded', async function () {
         btn.textContent = '注册';
         
         if (success) {
-            showLogin();
+            // 注册即登录，直接进入主界面
+            showPage('page-main');
+            $('#current-user-name').textContent = Auth.currentUser?.nickname || username;
+            Contacts.load();
         }
     });
 });

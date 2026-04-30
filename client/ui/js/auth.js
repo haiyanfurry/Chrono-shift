@@ -20,7 +20,7 @@ Auth.login = async function (username, password) {
         
         // 保存会话
         IPC.send(IPC.MessageType.LOGIN, {
-            user_id: result.data.user_id,
+            user_id: result.data.id,
             token: result.data.token
         });
         
@@ -35,12 +35,27 @@ Auth.login = async function (username, password) {
     return false;
 };
 
-// === 注册 ===
+// === 注册 (服务端直接返回 token，注册即登录) ===
 Auth.register = async function (username, password, nickname) {
     const result = await API.register(username, password, nickname);
     
-    if (result.status === 'ok') {
-        showNotification('注册成功，请登录', 'success');
+    if (result.status === 'ok' && result.data) {
+        // 注册成功，服务端已返回 token，自动登录
+        Auth.isLoggedIn = true;
+        Auth.currentUser = result.data;
+        API.TOKEN = result.data.token;
+        
+        // 保存会话
+        IPC.send(IPC.MessageType.LOGIN, {
+            user_id: result.data.id,
+            token: result.data.token
+        });
+        
+        // 保存令牌到本地存储
+        localStorage.setItem('chrono_token', result.data.token);
+        localStorage.setItem('chrono_user', JSON.stringify(result.data));
+        
+        showNotification('注册成功', 'success');
         return true;
     }
     

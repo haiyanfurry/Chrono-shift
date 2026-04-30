@@ -54,20 +54,24 @@ API.login = function (username, password) {
 };
 
 // 获取用户信息
-API.getProfile = function () {
-    return API.request('GET', '/api/user/profile');
+API.getProfile = function (userId) {
+    const query = userId ? `?user_id=${userId}` : '';
+    return API.request('GET', `/api/user/profile${query}`);
 };
 
 // 更新用户信息
 API.updateProfile = function (nickname, avatar_url) {
-    return API.request('PUT', '/api/user/update', {
-        nickname, avatar_url
-    });
+    const data = { nickname, avatar_url };
+    // 如果有当前用户 ID，一并发送
+    if (window.Auth && window.Auth.currentUser && window.Auth.currentUser.id) {
+        data.user_id = window.Auth.currentUser.id;
+    }
+    return API.request('PUT', '/api/user/update', data);
 };
 
 // 搜索用户
 API.searchUsers = function (keyword) {
-    return API.request('GET', `/api/user/search?keyword=${encodeURIComponent(keyword)}`);
+    return API.request('GET', `/api/user/search?q=${encodeURIComponent(keyword)}`);
 };
 
 // 获取好友列表
