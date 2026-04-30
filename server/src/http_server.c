@@ -1,29 +1,44 @@
 /**
- * Chrono-shift HTTP 服务器 (IOCP 事件驱动完整实现)
+ * Chrono-shift HTTP 服务器 (epoll/poll 事件驱动完整实现)
  * 语言标准: C99
- * 平台: Windows 10/11 x64
- * 
- * 基于 Windows IOCP (I/O Completion Port) 的高性能 HTTP 服务器
+ * 平台: Linux (epoll) / Windows (WSAPoll)
+ *
+ * Linux: epoll 边缘触发模式 + 工作线程池
+ * Windows: WSAPoll 轮询模式
  */
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <winsock2.h>
-#include <mswsock.h>
+#include "http_server.h"
+#include "platform_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
+#include <time.h>
+#include <errno.h>
 
-#include "http_server.h"
+/* ============================================================
+ * 平台特定头文件
+ * ============================================================ */
+#ifdef PLATFORM_LINUX
+    #include <sys/epoll.h>
+    #include <pthread.h>
+    #define SOCK_ERR_EAGAIN EAGAIN
+#else
+    #include <winsock2.h>
+    #include <windows.h>
+    #define SOCK_ERR_EAGAIN WSAEWOULDBLOCK
+#endif
 
 /* ============================================================
  * 常量定义
  * ============================================================ */
 #define MAX_ROUTES          128
 #define MAX_WORKERS         16
+#define MAX_EVENTS          1024
 #define MAX_BUFFER_SIZE     65536
-#define MAX_HEADER_SIZE     8192
-#define IOCP_BUF_COUNT      64
+#define LISTEN_BACKLOG      1024
+#define TIMEOUT_MS          30000
+#define POLL_INTERVAL_MS    50
 
 /* ============================================================
  * 数据结构
@@ -37,64 +52,73 @@ typedef struct {
     void* user_data;
 } RouteEntry;
 
+/* 连接状态 */
+typedef enum {
+    CONN_READING,
+    CONN_WRITING,
+    CONN_WS_OPEN,
+    CONN_CLOSED
+} ConnState;
+
 /* 每连接数据 */
-typedef struct {
-    OVERLAPPED overlapped;
-    SOCKET socket;
-    WSABUF wsa_buf;
-    uint8_t buffer[MAX_BUFFER_SIZE];
-    size_t recv_bytes;
-    size_t send_bytes;
-    bool receiving;
-    bool closed;
-    
-    /* 请求解析状态 */
+typedef struct Connection {
+    socket_t fd;
+    ConnState state;
+    uint8_t read_buf[MAX_BUFFER_SIZE];
+    size_t read_offset;
+    uint8_t write_buf[MAX_BUFFER_SIZE];
+    size_t write_offset;
+    size_t write_total;
     HttpRequest request;
     HttpResponse response;
     bool request_parsed;
-    bool response_sent;
-    
-    /* WebSocket 升级 */
     bool is_websocket;
     void* ws_conn;
-} PerIoData;
+    uint64_t last_activity_ms;
+    struct Connection* next;
+    struct Connection* prev;
+} Connection;
 
 /* 服务器上下文 */
 typedef struct {
-    SOCKET listen_socket;
-    HANDLE iocp;
-    HANDLE worker_threads[MAX_WORKERS];
-    DWORD worker_count;
-    
+    socket_t listen_fd;
+#ifdef PLATFORM_LINUX
+    int epoll_fd;
+#endif
+    bool running;
     RouteEntry routes[MAX_ROUTES];
     size_t route_count;
-    
     ServerConfig config;
-    bool running;
-    
-    /* AcceptEx 函数指针 */
-    LPFN_ACCEPTEX lpfnAcceptEx;
-    LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockaddrs;
+    Connection conn_list;          /* 哨兵节点 */
+    int active_connections;
+    uint64_t total_requests;
+    uint64_t start_time_ms;
+#ifdef PLATFORM_LINUX
+    pthread_t worker_threads[MAX_WORKERS];
+#else
+    HANDLE worker_threads[MAX_WORKERS];
+#endif
+    int worker_count;
 } ServerContext;
 
-/* ============================================================
- * 全局状态
- * ============================================================ */
 static ServerContext s_ctx;
 static bool s_initialized = false;
 
 /* ============================================================
  * 前向声明
  * ============================================================ */
-static DWORD WINAPI worker_thread(LPVOID param);
-static void handle_io_completion(PerIoData* io_data, DWORD bytes_transferred, ULONG_PTR completion_key);
-static int  parse_http_request(PerIoData* io_data);
-static int  build_http_response(PerIoData* io_data);
-static int  find_route(const char* method, const char* path, RouteEntry** entry);
-static void begin_recv(PerIoData* io_data);
-static void begin_send(PerIoData* io_data);
-static PerIoData* create_io_data(void);
-static void free_io_data(PerIoData* io_data);
+static void  event_loop(void);
+static int   handle_accept(void);
+static int   handle_conn_read(Connection* conn);
+static int   handle_conn_write(Connection* conn);
+static int   parse_http_request(Connection* conn);
+static int   build_http_response(Connection* conn);
+static int   find_route(const char* method, const char* path, RouteEntry** entry);
+static Connection* conn_new(socket_t fd);
+static void  conn_close(Connection* conn);
+static void  conn_list_add(Connection* conn);
+static void  conn_list_remove(Connection* conn);
+static void  conn_timeout_check(void);
 
 /* ============================================================
  * API 实现
@@ -102,9 +126,8 @@ static void free_io_data(PerIoData* io_data);
 
 int http_server_init(const ServerConfig* config)
 {
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
-        LOG_ERROR("WSAStartup 失败");
+    if (net_init() != 0) {
+        fprintf(stderr, "[ERROR] 网络初始化失败\n");
         return -1;
     }
 
@@ -112,18 +135,21 @@ int http_server_init(const ServerConfig* config)
     memcpy(&s_ctx.config, config, sizeof(ServerConfig));
     s_ctx.route_count = 0;
     s_ctx.running = false;
+    s_ctx.listen_fd = INVALID_SOCKET_VAL;
+    s_ctx.active_connections = 0;
+    s_ctx.total_requests = 0;
+    s_ctx.conn_list.next = &s_ctx.conn_list;
+    s_ctx.conn_list.prev = &s_ctx.conn_list;
     s_initialized = true;
 
-    LOG_INFO("HTTP 服务器 IOCP 模式初始化完成");
+    fprintf(stdout, "[INFO] HTTP 服务器初始化完成\n");
     return 0;
 }
 
 int http_server_register_route(const char* method, const char* path,
                                 RouteHandler handler, void* user_data)
 {
-    if (!s_initialized || s_ctx.route_count >= MAX_ROUTES) {
-        return -1;
-    }
+    if (!s_initialized || s_ctx.route_count >= MAX_ROUTES) return -1;
 
     RouteEntry* entry = &s_ctx.routes[s_ctx.route_count++];
     strncpy(entry->method, method, sizeof(entry->method) - 1);
@@ -131,130 +157,80 @@ int http_server_register_route(const char* method, const char* path,
     entry->handler = handler;
     entry->user_data = user_data;
 
-    LOG_INFO("注册路由: %s %s", method, path);
+    fprintf(stdout, "[INFO] 注册路由: %s %s\n", method, path);
     return 0;
 }
 
 int http_server_start(void)
 {
     if (!s_initialized) {
-        LOG_ERROR("HTTP 服务器未初始化");
+        fprintf(stderr, "[ERROR] HTTP 服务器未初始化\n");
         return -1;
     }
 
     /* 创建监听 socket */
-    s_ctx.listen_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, 
-                                     NULL, 0, WSA_FLAG_OVERLAPPED);
-    if (s_ctx.listen_socket == INVALID_SOCKET) {
-        LOG_ERROR("创建监听 socket 失败: %d", WSAGetLastError());
+    s_ctx.listen_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (s_ctx.listen_fd == INVALID_SOCKET_VAL) {
+        fprintf(stderr, "[ERROR] 创建监听 socket 失败\n");
         return -1;
     }
 
-    /* 设置 SO_REUSEADDR */
     int opt = 1;
-    setsockopt(s_ctx.listen_socket, SOL_SOCKET, SO_REUSEADDR, 
+    setsockopt(s_ctx.listen_fd, SOL_SOCKET, SO_REUSEADDR,
                (const char*)&opt, sizeof(opt));
 
-    /* 绑定地址 */
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = inet_addr(s_ctx.config.host);
     addr.sin_port = htons(s_ctx.config.port);
 
-    if (bind(s_ctx.listen_socket, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-        LOG_ERROR("绑定端口 %d 失败: %d", s_ctx.config.port, WSAGetLastError());
-        closesocket(s_ctx.listen_socket);
+    if (bind(s_ctx.listen_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        fprintf(stderr, "[ERROR] 绑定端口 %d 失败\n", s_ctx.config.port);
+        close_socket(s_ctx.listen_fd);
         return -1;
     }
 
-    /* 开始监听 */
-    if (listen(s_ctx.listen_socket, SOMAXCONN) == SOCKET_ERROR) {
-        LOG_ERROR("监听失败: %d", WSAGetLastError());
-        closesocket(s_ctx.listen_socket);
+    if (listen(s_ctx.listen_fd, LISTEN_BACKLOG) < 0) {
+        fprintf(stderr, "[ERROR] 监听失败\n");
+        close_socket(s_ctx.listen_fd);
         return -1;
     }
 
-    /* 创建 IOCP */
-    s_ctx.iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-    if (!s_ctx.iocp) {
-        LOG_ERROR("创建 IOCP 失败: %d", GetLastError());
-        closesocket(s_ctx.listen_socket);
+    set_nonblocking(s_ctx.listen_fd);
+
+#ifdef PLATFORM_LINUX
+    /* epoll 初始化 */
+    s_ctx.epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    if (s_ctx.epoll_fd < 0) {
+        fprintf(stderr, "[ERROR] epoll_create 失败\n");
+        close_socket(s_ctx.listen_fd);
         return -1;
     }
+    struct epoll_event ev;
+    ev.events = EPOLLIN | EPOLLET;
+    ev.data.fd = s_ctx.listen_fd;
+    epoll_ctl(s_ctx.epoll_fd, EPOLL_CTL_ADD, s_ctx.listen_fd, &ev);
+#endif
 
-    /* 将监听 socket 关联到 IOCP */
-    if (CreateIoCompletionPort((HANDLE)s_ctx.listen_socket, s_ctx.iocp, 0, 0) == NULL) {
-        LOG_ERROR("关联监听 socket 到 IOCP 失败: %d", GetLastError());
-        CloseHandle(s_ctx.iocp);
-        closesocket(s_ctx.listen_socket);
-        return -1;
-    }
-
-    /* 加载 AcceptEx 函数 */
-    GUID guidAcceptEx = WSAID_ACCEPTEX;
-    DWORD bytes;
-    WSAIoctl(s_ctx.listen_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-             &guidAcceptEx, sizeof(guidAcceptEx),
-             &s_ctx.lpfnAcceptEx, sizeof(s_ctx.lpfnAcceptEx),
-             &bytes, NULL, NULL);
-
-    GUID guidGetExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS;
-    WSAIoctl(s_ctx.listen_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-             &guidGetExSockaddrs, sizeof(guidGetExSockaddrs),
-             &s_ctx.lpfnGetAcceptExSockaddrs, sizeof(s_ctx.lpfnGetAcceptExSockaddrs),
-             &bytes, NULL, NULL);
-
-    /* 创建工作线程 */
-    SYSTEM_INFO sysinfo;
-    GetSystemInfo(&sysinfo);
-    s_ctx.worker_count = (DWORD)sysinfo.dwNumberOfProcessors * 2;
-    if (s_ctx.worker_count > MAX_WORKERS) s_ctx.worker_count = MAX_WORKERS;
-    if (s_ctx.worker_count < 2) s_ctx.worker_count = 2;
-
+    /* 启动 */
     s_ctx.running = true;
+    s_ctx.start_time_ms = now_ms();
+    s_ctx.worker_count = 4;
 
-    for (DWORD i = 0; i < s_ctx.worker_count; i++) {
-        s_ctx.worker_threads[i] = CreateThread(NULL, 0, worker_thread, NULL, 0, NULL);
-        if (!s_ctx.worker_threads[i]) {
-            LOG_ERROR("创建工作线程 %lu 失败", i);
-        }
+    /* 启动工作线程 */
+    for (int i = 0; i < s_ctx.worker_count; i++) {
+#ifdef PLATFORM_LINUX
+        pthread_create(&s_ctx.worker_threads[i], NULL,
+                       (void* (*)(void*))event_loop, NULL);
+#else
+        s_ctx.worker_threads[i] = CreateThread(NULL, 0,
+            (LPTHREAD_START_ROUTINE)event_loop, NULL, 0, NULL);
+#endif
     }
 
-    LOG_INFO("HTTP 服务器已启动: %s:%d, 工作线程: %lu", 
-             s_ctx.config.host, s_ctx.config.port, s_ctx.worker_count);
-
-    /* 提交初始 AcceptEx */
-    for (DWORD i = 0; i < IOCP_BUF_COUNT; i++) {
-        PerIoData* io_data = create_io_data();
-        if (io_data) {
-            /* 准备 AcceptEx 的临时 socket */
-            SOCKET accept_sock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP,
-                                           NULL, 0, WSA_FLAG_OVERLAPPED);
-            if (accept_sock != INVALID_SOCKET) {
-                io_data->socket = accept_sock;
-                
-                DWORD recv_bytes;
-                BOOL result = s_ctx.lpfnAcceptEx(
-                    s_ctx.listen_socket, accept_sock,
-                    io_data->buffer, 0,
-                    sizeof(struct sockaddr_in) + 16,
-                    sizeof(struct sockaddr_in) + 16,
-                    &recv_bytes,
-                    &io_data->overlapped
-                );
-                
-                if (!result && WSAGetLastError() != ERROR_IO_PENDING) {
-                    LOG_WARN("AcceptEx 提交失败: %d", WSAGetLastError());
-                    closesocket(accept_sock);
-                    free_io_data(io_data);
-                }
-            } else {
-                free_io_data(io_data);
-            }
-        }
-    }
-
+    fprintf(stdout, "[INFO] HTTP 服务器已启动: %s:%d, 工作线程: %d\n",
+            s_ctx.config.host, s_ctx.config.port, s_ctx.worker_count);
     return 0;
 }
 
@@ -262,264 +238,371 @@ void http_server_stop(void)
 {
     s_ctx.running = false;
 
-    /* 关闭监听 socket 以唤醒工作线程 */
-    if (s_ctx.listen_socket != INVALID_SOCKET) {
-        closesocket(s_ctx.listen_socket);
+    if (s_ctx.listen_fd != INVALID_SOCKET_VAL) {
+        close_socket(s_ctx.listen_fd);
+        s_ctx.listen_fd = INVALID_SOCKET_VAL;
     }
 
-    /* 等待工作线程结束 */
-    for (DWORD i = 0; i < s_ctx.worker_count; i++) {
-        if (s_ctx.worker_threads[i]) {
-            WaitForSingleObject(s_ctx.worker_threads[i], 3000);
-            CloseHandle(s_ctx.worker_threads[i]);
-        }
+    /* 等待工作线程 */
+    for (int i = 0; i < s_ctx.worker_count; i++) {
+#ifdef PLATFORM_LINUX
+        pthread_join(s_ctx.worker_threads[i], NULL);
+#else
+        WaitForSingleObject(s_ctx.worker_threads[i], 3000);
+        CloseHandle(s_ctx.worker_threads[i]);
+#endif
     }
 
-    if (s_ctx.iocp) {
-        CloseHandle(s_ctx.iocp);
+    /* 关闭所有连接 */
+    Connection* c = s_ctx.conn_list.next;
+    while (c != &s_ctx.conn_list) {
+        Connection* next = c->next;
+        conn_close(c);
+        c = next;
     }
 
-    WSACleanup();
-    LOG_INFO("HTTP 服务器已停止");
+#ifdef PLATFORM_LINUX
+    if (s_ctx.epoll_fd >= 0) close(s_ctx.epoll_fd);
+#endif
+
+    net_cleanup();
+    fprintf(stdout, "[INFO] HTTP 服务器已停止\n");
 }
 
 /* ============================================================
- * 工作线程
+ * 主事件循环
  * ============================================================ */
-static DWORD WINAPI worker_thread(LPVOID param)
+static void event_loop(void)
 {
-    (void)param;
+#ifdef PLATFORM_LINUX
+    struct epoll_event events[MAX_EVENTS];
 
     while (s_ctx.running) {
-        DWORD bytes_transferred;
-        ULONG_PTR completion_key;
-        LPOVERLAPPED overlapped = NULL;
-
-        BOOL result = GetQueuedCompletionStatus(
-            s_ctx.iocp,
-            &bytes_transferred,
-            &completion_key,
-            &overlapped,
-            INFINITE
-        );
-
-        if (!overlapped) {
-            continue;
+        int nfds = epoll_wait(s_ctx.epoll_fd, events, MAX_EVENTS, 1000);
+        if (nfds < 0) {
+            if (errno == EINTR) continue;
+            break;
         }
 
-        PerIoData* io_data = CONTAINING_RECORD(overlapped, PerIoData, overlapped);
+        for (int i = 0; i < nfds; i++) {
+            int fd = events[i].data.fd;
+            uint32_t ev = events[i].events;
 
-        if (!result) {
-            DWORD err = GetLastError();
-            if (err != ERROR_OPERATION_ABORTED) {
-                LOG_WARN("IOCP 错误: %lu", err);
+            if (fd == s_ctx.listen_fd) {
+                handle_accept();
+                continue;
             }
-            free_io_data(io_data);
-            continue;
+
+            if (ev & (EPOLLERR | EPOLLHUP | EPOLLRDHUP)) {
+                /* 查找并关闭连接 */
+                Connection* c = s_ctx.conn_list.next;
+                while (c != &s_ctx.conn_list) {
+                    if (c->fd == fd) { conn_close(c); break; }
+                    c = c->next;
+                }
+                continue;
+            }
+
+            Connection* c = s_ctx.conn_list.next;
+            while (c != &s_ctx.conn_list) {
+                if (c->fd == fd) {
+                    if ((ev & EPOLLIN) && c->state == CONN_READING)
+                        handle_conn_read(c);
+                    if ((ev & EPOLLOUT) && c->state == CONN_WRITING)
+                        handle_conn_write(c);
+                    break;
+                }
+                c = c->next;
+            }
         }
 
-        if (completion_key == 0 && bytes_transferred == 0) {
-            /* AcceptEx 完成 — 新连接 */
-            struct sockaddr_in* local_addr = NULL;
-            struct sockaddr_in* remote_addr = NULL;
-            int local_len = sizeof(struct sockaddr_in) + 16;
-            int remote_len = sizeof(struct sockaddr_in) + 16;
-            
-            s_ctx.lpfnGetAcceptExSockaddrs(
-                io_data->buffer, 0,
-                sizeof(struct sockaddr_in) + 16,
-                sizeof(struct sockaddr_in) + 16,
-                (struct sockaddr**)&local_addr, &local_len,
-                (struct sockaddr**)&remote_addr, &remote_len
-            );
+        conn_timeout_check();
+    }
 
-            /* 设置新 socket 为非阻塞 */
-            u_long nonblock = 1;
-            ioctlsocket(io_data->socket, FIONBIO, &nonblock);
+#else /* PLATFORM_WINDOWS */
+    /* Windows: 使用 select 轮询 */
+    while (s_ctx.running) {
+        fd_set read_fds, write_fds, err_fds;
+        FD_ZERO(&read_fds);
+        FD_ZERO(&write_fds);
+        FD_ZERO(&err_fds);
 
-            /* 关联到 IOCP */
-            if (CreateIoCompletionPort((HANDLE)io_data->socket, s_ctx.iocp, 1, 0) == NULL) {
-                LOG_WARN("关联客户端 socket 到 IOCP 失败");
-                free_io_data(io_data);
-            } else {
-                io_data->receiving = true;
-                begin_recv(io_data);
+        socket_t max_fd = s_ctx.listen_fd;
+        FD_SET(s_ctx.listen_fd, &read_fds);
+
+        Connection* c = s_ctx.conn_list.next;
+        while (c != &s_ctx.conn_list) {
+            if (c->fd != INVALID_SOCKET_VAL) {
+                if (c->state == CONN_READING || c->state == CONN_WS_OPEN)
+                    FD_SET(c->fd, &read_fds);
+                if (c->state == CONN_WRITING)
+                    FD_SET(c->fd, &write_fds);
+                FD_SET(c->fd, &err_fds);
+                if (c->fd > max_fd) max_fd = c->fd;
             }
+            c = c->next;
+        }
 
-            /* 提交下一个 AcceptEx */
-            if (s_ctx.running) {
-                PerIoData* new_accept = create_io_data();
-                if (new_accept) {
-                    SOCKET new_sock = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP,
-                                                NULL, 0, WSA_FLAG_OVERLAPPED);
-                    if (new_sock != INVALID_SOCKET) {
-                        new_accept->socket = new_sock;
-                        DWORD recv_bytes;
-                        s_ctx.lpfnAcceptEx(
-                            s_ctx.listen_socket, new_sock,
-                            new_accept->buffer, 0,
-                            sizeof(struct sockaddr_in) + 16,
-                            sizeof(struct sockaddr_in) + 16,
-                            &recv_bytes,
-                            &new_accept->overlapped
-                        );
-                    } else {
-                        free_io_data(new_accept);
-                    }
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = POLL_INTERVAL_MS * 1000;
+
+        int nfds = select((int)(max_fd + 1), &read_fds, &write_fds, &err_fds, &tv);
+        if (nfds < 0) break;
+
+        if (FD_ISSET(s_ctx.listen_fd, &read_fds))
+            handle_accept();
+
+        c = s_ctx.conn_list.next;
+        while (c != &s_ctx.conn_list) {
+            Connection* next = c->next;
+            if (c->fd != INVALID_SOCKET_VAL) {
+                if (FD_ISSET(c->fd, &err_fds)) {
+                    conn_close(c);
+                } else {
+                    if (FD_ISSET(c->fd, &read_fds) && (c->state == CONN_READING || c->state == CONN_WS_OPEN))
+                        handle_conn_read(c);
+                    if (FD_ISSET(c->fd, &write_fds) && c->state == CONN_WRITING)
+                        handle_conn_write(c);
                 }
             }
+            c = next;
+        }
 
+        conn_timeout_check();
+    }
+#endif
+}
+
+/* ============================================================
+ * accept 处理
+ * ============================================================ */
+static int handle_accept(void)
+{
+    struct sockaddr_in client_addr;
+    socklen_t addr_len = sizeof(client_addr);
+
+    while (1) {
+        socket_t client_fd = accept(s_ctx.listen_fd,
+                                     (struct sockaddr*)&client_addr, &addr_len);
+        if (client_fd == INVALID_SOCKET_VAL) {
+#ifdef PLATFORM_LINUX
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+#else
+            if (WSAGetLastError() == WSAEWOULDBLOCK) break;
+#endif
+            break;
+        }
+
+        set_nonblocking(client_fd);
+        int opt = 1;
+        setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY,
+                   (const char*)&opt, sizeof(opt));
+
+        Connection* conn = conn_new(client_fd);
+        if (!conn) {
+            close_socket(client_fd);
             continue;
         }
 
-        /* 处理现有连接的 IO 完成 */
-        handle_io_completion(io_data, bytes_transferred, completion_key);
+#ifdef PLATFORM_LINUX
+        struct epoll_event ev;
+        ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+        ev.data.fd = client_fd;
+        if (epoll_ctl(s_ctx.epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) < 0) {
+            conn_close(conn);
+            continue;
+        }
+#endif
+
+        conn_list_add(conn);
     }
 
     return 0;
 }
 
 /* ============================================================
- * IO 完成处理
+ * 读取处理
  * ============================================================ */
-static void handle_io_completion(PerIoData* io_data, DWORD bytes_transferred, ULONG_PTR completion_key)
+static int handle_conn_read(Connection* conn)
 {
-    (void)completion_key;
+    if (!conn || conn->state == CONN_CLOSED) return -1;
 
-    if (bytes_transferred == 0 || io_data->closed) {
-        free_io_data(io_data);
-        return;
+    while (1) {
+        if (conn->read_offset >= MAX_BUFFER_SIZE - 1) return -1;
+
+        ssize_t n = recv(conn->fd,
+                         (char*)(conn->read_buf + conn->read_offset),
+                         MAX_BUFFER_SIZE - conn->read_offset - 1, 0);
+
+        if (n > 0) {
+            conn->read_offset += (size_t)n;
+            conn->read_buf[conn->read_offset] = '\0';
+            conn->last_activity_ms = now_ms();
+            continue;
+        }
+
+        if (n == 0) return -1;  /* 连接关闭 */
+
+#ifdef PLATFORM_LINUX
+        if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+#else
+        if (WSAGetLastError() == WSAEWOULDBLOCK) break;
+#endif
+        return -1;
     }
 
-    if (io_data->receiving) {
-        /* 接收完成 */
-        io_data->recv_bytes += bytes_transferred;
-        io_data->buffer[io_data->recv_bytes] = '\0';
+    /* 尝试解析 HTTP */
+    if (conn->read_offset > 0 && !conn->request_parsed) {
+        if (parse_http_request(conn) == 0) {
+            conn->request_parsed = true;
+            s_ctx.total_requests++;
 
-        /* 解析 HTTP 请求 */
-        if (parse_http_request(io_data) == 0) {
-            io_data->request_parsed = true;
-            
-            /* 查找并执行路由处理器 */
+            http_response_init(&conn->response);
             RouteEntry* route = NULL;
-            if (find_route(io_data->request.method_str, io_data->request.path, &route) == 0) {
-                http_response_init(&io_data->response);
-                route->handler(&io_data->request, &io_data->response, route->user_data);
+            if (find_route(conn->request.method_str, conn->request.path, &route) == 0) {
+                route->handler(&conn->request, &conn->response, route->user_data);
             } else {
-                /* 404 */
-                http_response_init(&io_data->response);
-                http_response_set_status(&io_data->response, 404, "Not Found");
-                char* body = "{\"status\":\"error\",\"message\":\"Not Found\"}";
-                http_response_set_json(&io_data->response, body);
+                http_response_set_status(&conn->response, 404, "Not Found");
+                http_response_set_json(&conn->response, "{\"status\":\"error\",\"message\":\"Not Found\"}");
             }
 
-            /* 发送响应 */
-            io_data->receiving = false;
-            build_http_response(io_data);
-            begin_send(io_data);
-        } else {
-            /* 请求未完整，继续接收 */
-            begin_recv(io_data);
-        }
-    } else {
-        /* 发送完成 — 检查是否为 WebSocket */
-        if (io_data->is_websocket) {
-            /* WebSocket 连接继续保持 */
-            io_data->receiving = true;
-            begin_recv(io_data);
-        } else {
-            /* HTTP 短连接，关闭 */
-            free_io_data(io_data);
+            build_http_response(conn);
+            conn->state = CONN_WRITING;
+            conn->write_offset = 0;
+
+#ifdef PLATFORM_LINUX
+            struct epoll_event ev;
+            ev.events = EPOLLOUT | EPOLLET;
+            ev.data.fd = conn->fd;
+            epoll_ctl(s_ctx.epoll_fd, EPOLL_CTL_MOD, conn->fd, &ev);
+#endif
+            return handle_conn_write(conn);
         }
     }
+
+    return 0;
+}
+
+/* ============================================================
+ * 写入处理
+ * ============================================================ */
+static int handle_conn_write(Connection* conn)
+{
+    if (!conn || conn->state == CONN_CLOSED) return -1;
+
+    while (conn->write_offset < conn->write_total) {
+        ssize_t n = send(conn->fd,
+                         (const char*)(conn->write_buf + conn->write_offset),
+                         conn->write_total - conn->write_offset, 0);
+        if (n > 0) {
+            conn->write_offset += (size_t)n;
+            continue;
+        }
+        if (n == 0) return -1;
+#ifdef PLATFORM_LINUX
+        if (errno == EAGAIN || errno == EWOULDBLOCK) return 0;
+#else
+        if (WSAGetLastError() == WSAEWOULDBLOCK) return 0;
+#endif
+        return -1;
+    }
+
+    if (conn->write_offset >= conn->write_total) {
+        if (conn->is_websocket) {
+            conn->state = CONN_WS_OPEN;
+#ifdef PLATFORM_LINUX
+            struct epoll_event ev;
+            ev.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+            ev.data.fd = conn->fd;
+            epoll_ctl(s_ctx.epoll_fd, EPOLL_CTL_MOD, conn->fd, &ev);
+#endif
+        } else {
+            if (conn->response.body &&
+                conn->response.body != conn->read_buf &&
+                conn->response.body != conn->write_buf) {
+                free(conn->response.body);
+                conn->response.body = NULL;
+            }
+            conn_close(conn);
+        }
+    }
+
+    return 0;
 }
 
 /* ============================================================
  * HTTP 请求解析
  * ============================================================ */
-static int parse_http_request(PerIoData* io_data)
+static int parse_http_request(Connection* conn)
 {
-    char* buf = (char*)io_data->buffer;
-    size_t len = io_data->recv_bytes;
+    char* buf = (char*)conn->read_buf;
+    size_t len = conn->read_offset;
 
-    /* 查找请求行结束 */
     char* line_end = strstr(buf, "\r\n");
     if (!line_end) return -1;
 
-    /* 解析请求行: METHOD PATH HTTP/1.1 */
     char method[16], path[2048], version[16];
-    if (sscanf(buf, "%15s %2047s %15s", method, path, version) < 3) {
+    if (sscanf(buf, "%15s %2047s %15s", method, path, version) < 3)
         return -1;
-    }
 
-    strncpy(io_data->request.method_str, method, sizeof(io_data->request.method_str) - 1);
-    strncpy(io_data->request.path, path, sizeof(io_data->request.path) - 1);
-    strncpy(io_data->request.version, version, sizeof(io_data->request.version) - 1);
+    strncpy(conn->request.method_str, method, sizeof(conn->request.method_str) - 1);
+    strncpy(conn->request.path, path, sizeof(conn->request.path) - 1);
+    strncpy(conn->request.version, version, sizeof(conn->request.version) - 1);
 
-    /* 解析 HTTP 方法枚举 */
-    if (strcmp(method, "GET") == 0) io_data->request.method = HTTP_GET;
-    else if (strcmp(method, "POST") == 0) io_data->request.method = HTTP_POST;
-    else if (strcmp(method, "PUT") == 0) io_data->request.method = HTTP_PUT;
-    else if (strcmp(method, "DELETE") == 0) io_data->request.method = HTTP_DELETE;
-    else if (strcmp(method, "PATCH") == 0) io_data->request.method = HTTP_PATCH;
-    else io_data->request.method = HTTP_UNKNOWN;
+    if (strcmp(method, "GET") == 0) conn->request.method = HTTP_GET;
+    else if (strcmp(method, "POST") == 0) conn->request.method = HTTP_POST;
+    else if (strcmp(method, "PUT") == 0) conn->request.method = HTTP_PUT;
+    else if (strcmp(method, "DELETE") == 0) conn->request.method = HTTP_DELETE;
+    else if (strcmp(method, "PATCH") == 0) conn->request.method = HTTP_PATCH;
+    else conn->request.method = HTTP_UNKNOWN;
 
-    /* 解析查询字符串 */
     char* query_start = strchr(path, '?');
     if (query_start) {
         *query_start = '\0';
-        strncpy(io_data->request.query, query_start + 1, sizeof(io_data->request.query) - 1);
-        strncpy(io_data->request.path, path, sizeof(io_data->request.path) - 1);
+        strncpy(conn->request.query, query_start + 1, sizeof(conn->request.query) - 1);
+        strncpy(conn->request.path, path, sizeof(conn->request.path) - 1);
     }
 
-    /* 解析头部 */
     char* header_start = line_end + 2;
     char* header_end = strstr(header_start, "\r\n\r\n");
     if (!header_end) return -1;
 
-    size_t header_count = 0;
+    size_t hc = 0;
     char* line = header_start;
-    while (line < header_end && header_count < 64) {
+    while (line < header_end && hc < 64) {
         char* crlf = strstr(line, "\r\n");
         if (!crlf) break;
-
         char* colon = strchr(line, ':');
         if (colon && colon < crlf) {
-            size_t key_len = colon - line;
-            size_t val_len = crlf - colon - 2;
-            if (key_len < 1024 && val_len < 1024) {
-                strncpy(io_data->request.headers[header_count][0], line, key_len);
-                io_data->request.headers[header_count][0][key_len] = '\0';
-                
-                /* 跳过空格 */
-                const char* val_start = colon + 1;
-                while (*val_start == ' ') val_start++;
-                
-                strncpy(io_data->request.headers[header_count][1], val_start, val_len);
-                io_data->request.headers[header_count][1][val_len] = '\0';
-                header_count++;
+            size_t klen = (size_t)(colon - line);
+            size_t vlen = (size_t)(crlf - colon - 2);
+            if (klen < 1024 && vlen < 1024) {
+                strncpy(conn->request.headers[hc][0], line, klen);
+                conn->request.headers[hc][0][klen] = '\0';
+                const char* vs = colon + 1;
+                while (*vs == ' ') vs++;
+                strncpy(conn->request.headers[hc][1], vs, vlen);
+                conn->request.headers[hc][1][vlen] = '\0';
+                hc++;
             }
         }
         line = crlf + 2;
     }
-    io_data->request.header_count = header_count;
+    conn->request.header_count = hc;
 
-    /* 解析请求体 */
     const char* body_start = header_end + 4;
-    size_t body_len = len - (body_start - buf);
+    size_t body_len = len - (size_t)(body_start - buf);
     if (body_len > 0) {
-        /* 查找 Content-Length */
-        for (size_t i = 0; i < header_count; i++) {
-            if (strcasecmp(io_data->request.headers[i][0], "Content-Length") == 0) {
-                size_t content_length = (size_t)atol(io_data->request.headers[i][1]);
-                if (body_len < content_length) {
-                    return -1; /* 还未接收完整 */
-                }
+        for (size_t i = 0; i < hc; i++) {
+            if (strcasecmp(conn->request.headers[i][0], "Content-Length") == 0) {
+                size_t cl = (size_t)atol(conn->request.headers[i][1]);
+                if (body_len < cl) return -1;
                 break;
             }
         }
-        io_data->request.body = (uint8_t*)body_start;
-        io_data->request.body_length = body_len;
+        conn->request.body = (uint8_t*)body_start;
+        conn->request.body_length = body_len;
     }
 
     return 0;
@@ -528,88 +611,43 @@ static int parse_http_request(PerIoData* io_data)
 /* ============================================================
  * 构建 HTTP 响应
  * ============================================================ */
-static int build_http_response(PerIoData* io_data)
+static int build_http_response(Connection* conn)
 {
-    HttpResponse* resp = &io_data->response;
-    char* buf = (char*)io_data->buffer;
-    size_t offset = 0;
+    HttpResponse* resp = &conn->response;
+    char* buf = (char*)conn->write_buf;
+    size_t off = 0;
 
-    /* 状态行 */
-    if (resp->status_text[0] == '\0') {
+    if (resp->status_text[0] == '\0')
         strncpy(resp->status_text, "OK", sizeof(resp->status_text) - 1);
-    }
 
-    offset += snprintf(buf + offset, MAX_BUFFER_SIZE - offset,
-                       "HTTP/1.1 %d %s\r\n", resp->status_code, resp->status_text);
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                    "HTTP/1.1 %d %s\r\n", resp->status_code, resp->status_text);
 
-    /* 默认头部 */
     if (resp->header_count == 0) {
-        offset += snprintf(buf + offset, MAX_BUFFER_SIZE - offset,
-                          "Content-Type: application/json; charset=utf-8\r\n");
+        off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                        "Content-Type: application/json; charset=utf-8\r\n");
     }
 
-    /* 自定义头部 */
     for (size_t i = 0; i < resp->header_count; i++) {
-        offset += snprintf(buf + offset, MAX_BUFFER_SIZE - offset,
-                          "%s: %s\r\n", resp->headers[i][0], resp->headers[i][1]);
+        off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                        "%s: %s\r\n", resp->headers[i][0], resp->headers[i][1]);
     }
 
-    /* Content-Length */
-    offset += snprintf(buf + offset, MAX_BUFFER_SIZE - offset,
-                      "Content-Length: %zu\r\n", resp->body_length);
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                    "Content-Length: %zu\r\n", resp->body_length);
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                    "Connection: keep-alive\r\n");
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off, "\r\n");
 
-    /* Connection */
-    offset += snprintf(buf + offset, MAX_BUFFER_SIZE - offset,
-                      "Connection: keep-alive\r\n");
-
-    /* 结束头部 */
-    offset += snprintf(buf + offset, MAX_BUFFER_SIZE - offset, "\r\n");
-
-    /* 响应体 */
     if (resp->body && resp->body_length > 0) {
-        memcpy(buf + offset, resp->body, resp->body_length);
-        offset += resp->body_length;
+        if (off + resp->body_length <= MAX_BUFFER_SIZE) {
+            memcpy(buf + off, resp->body, resp->body_length);
+            off += resp->body_length;
+        }
     }
 
-    io_data->send_bytes = offset;
+    conn->write_total = off;
     return 0;
-}
-
-/* ============================================================
- * 收发操作
- * ============================================================ */
-static void begin_recv(PerIoData* io_data)
-{
-    DWORD flags = 0;
-    DWORD recv_bytes = 0;
-    
-    io_data->wsa_buf.buf = (char*)(io_data->buffer + io_data->recv_bytes);
-    io_data->wsa_buf.len = MAX_BUFFER_SIZE - io_data->recv_bytes - 1;
-
-    memset(&io_data->overlapped, 0, sizeof(OVERLAPPED));
-
-    int result = WSARecv(io_data->socket, &io_data->wsa_buf, 1, 
-                         &recv_bytes, &flags, &io_data->overlapped, NULL);
-
-    if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING) {
-        free_io_data(io_data);
-    }
-}
-
-static void begin_send(PerIoData* io_data)
-{
-    io_data->wsa_buf.buf = (char*)io_data->buffer;
-    io_data->wsa_buf.len = io_data->send_bytes;
-
-    memset(&io_data->overlapped, 0, sizeof(OVERLAPPED));
-
-    DWORD sent_bytes = 0;
-    int result = WSASend(io_data->socket, &io_data->wsa_buf, 1,
-                         &sent_bytes, 0, &io_data->overlapped, NULL);
-
-    if (result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING) {
-        free_io_data(io_data);
-    }
 }
 
 /* ============================================================
@@ -619,71 +657,106 @@ static int find_route(const char* method, const char* path, RouteEntry** entry)
 {
     for (size_t i = 0; i < s_ctx.route_count; i++) {
         if (strcmp(s_ctx.routes[i].method, method) != 0) continue;
-        
-        /* 精确匹配 */
         if (strcmp(s_ctx.routes[i].path, path) == 0) {
             *entry = &s_ctx.routes[i];
             return 0;
         }
-        
-        /* 通配符匹配: /api/file/* */
-        size_t route_len = strlen(s_ctx.routes[i].path);
-        if (route_len > 2 && s_ctx.routes[i].path[route_len - 1] == '*' &&
-            s_ctx.routes[i].path[route_len - 2] == '/') {
-            if (strncmp(s_ctx.routes[i].path, path, route_len - 2) == 0) {
+        size_t rlen = strlen(s_ctx.routes[i].path);
+        if (rlen > 2 && s_ctx.routes[i].path[rlen - 1] == '*' &&
+            s_ctx.routes[i].path[rlen - 2] == '/') {
+            if (strncmp(s_ctx.routes[i].path, path, rlen - 2) == 0) {
                 *entry = &s_ctx.routes[i];
                 return 0;
             }
         }
     }
-
     return -1;
 }
 
 /* ============================================================
- * IO 数据管理
+ * 连接管理
  * ============================================================ */
-static PerIoData* create_io_data(void)
+static Connection* conn_new(socket_t fd)
 {
-    PerIoData* io_data = (PerIoData*)calloc(1, sizeof(PerIoData));
-    if (io_data) {
-        io_data->socket = INVALID_SOCKET;
-        memset(&io_data->overlapped, 0, sizeof(OVERLAPPED));
-    }
-    return io_data;
+    Connection* c = (Connection*)calloc(1, sizeof(Connection));
+    if (!c) return NULL;
+    c->fd = fd;
+    c->state = CONN_READING;
+    c->last_activity_ms = now_ms();
+    return c;
 }
 
-static void free_io_data(PerIoData* io_data)
+static void conn_close(Connection* c)
 {
-    if (!io_data) return;
-    
-    if (io_data->socket != INVALID_SOCKET) {
-        closesocket(io_data->socket);
+    if (!c) return;
+
+#ifdef PLATFORM_LINUX
+    if (c->fd >= 0)
+        epoll_ctl(s_ctx.epoll_fd, EPOLL_CTL_DEL, c->fd, NULL);
+#endif
+
+    if (c->fd != INVALID_SOCKET_VAL) {
+        close_socket(c->fd);
+        c->fd = INVALID_SOCKET_VAL;
     }
 
-    /* 释放响应体（如果是堆分配的） */
-    if (io_data->response.body && io_data->response.body != io_data->buffer) {
-        free(io_data->response.body);
+    if (c->response.body &&
+        c->response.body != c->read_buf &&
+        c->response.body != c->write_buf) {
+        free(c->response.body);
+        c->response.body = NULL;
     }
 
-    free(io_data);
+    conn_list_remove(c);
+    free(c);
+}
+
+static void conn_list_add(Connection* c)
+{
+    if (!c) return;
+    c->next = s_ctx.conn_list.next;
+    c->prev = &s_ctx.conn_list;
+    s_ctx.conn_list.next->prev = c;
+    s_ctx.conn_list.next = c;
+    s_ctx.active_connections++;
+}
+
+static void conn_list_remove(Connection* c)
+{
+    if (!c || !c->prev) return;
+    c->prev->next = c->next;
+    c->next->prev = c->prev;
+    c->prev = NULL;
+    c->next = NULL;
+    s_ctx.active_connections--;
+}
+
+static void conn_timeout_check(void)
+{
+    uint64_t now = now_ms();
+    Connection* c = s_ctx.conn_list.next;
+    while (c != &s_ctx.conn_list) {
+        Connection* next = c->next;
+        if (c->state != CONN_WS_OPEN &&
+            (now - c->last_activity_ms) > TIMEOUT_MS) {
+            conn_close(c);
+        }
+        c = next;
+    }
 }
 
 /* ============================================================
- * HTTP 头部辅助函数 (声明在 server.h)
+ * HTTP 头部辅助函数 (公开 API)
  * ============================================================ */
 
 const char* http_get_header_value(const char headers[64][2][1024], size_t header_count,
                                    const char* key)
 {
     if (!key || header_count == 0) return NULL;
-
     for (size_t i = 0; i < header_count; i++) {
-        if (strcasecmp(headers[i][0], key) == 0) {
+        if (strcasecmp(headers[i][0], key) == 0)
             return headers[i][1];
-        }
     }
-
     return NULL;
 }
 
@@ -691,14 +764,9 @@ const char* http_extract_bearer_token(const char headers[64][2][1024], size_t he
 {
     const char* auth = http_get_header_value(headers, header_count, "Authorization");
     if (!auth) return NULL;
-
-    /* 查找 "Bearer " 前缀 */
     const char* prefix = "Bearer ";
-    size_t prefix_len = strlen(prefix);
-
-    if (strncasecmp(auth, prefix, prefix_len) == 0) {
-        return auth + prefix_len;
-    }
-
+    size_t plen = strlen(prefix);
+    if (strncasecmp(auth, prefix, plen) == 0)
+        return auth + plen;
     return NULL;
 }

@@ -1,0 +1,872 @@
+/**
+ * ============================================================
+ * Chrono-shift CLI 调试接口
+ * ============================================================
+ *
+ * 功能:
+ *   - endpoint <path>  : 向服务器发送 HTTP GET 请求测试 API
+ *   - health           : 检查服务器健康状态
+ *   - token <token>    : 解码并验证 JWT 令牌
+ *   - user list        : 列出所有用户
+ *   - user get <id>    : 获取指定用户信息
+ *   - user create <username> <password> [nickname] : 创建用户
+ *   - user delete <id> : 删除用户
+ *   - exit / quit      : 退出调试 CLI
+ *
+ * 编译:
+ *   Linux:   gcc -std=c99 -Wall -Wextra -pedantic -I../include \
+ *                debug_cli.c -o debug_cli -lpthread
+ *   Windows: gcc -std=c99 -Wall -Wextra -I../include \
+ *                debug_cli.c -o debug_cli.exe -lws2_32
+ *
+ * ============================================================
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <windows.h>
+    #pragma comment(lib, "ws2_32.lib")
+    typedef SOCKET socket_t;
+    #define CLOSE_SOCKET(fd) closesocket(fd)
+    #define ISVALIDSOCKET(fd) ((fd) != INVALID_SOCKET)
+    #define SOCKET_ERROR_AGAIN WSAEWOULDBLOCK
+#else
+    #include <unistd.h>
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <netdb.h>
+    #include <arpa/inet.h>
+    #include <errno.h>
+    typedef int socket_t;
+    #define CLOSE_SOCKET(fd) close(fd)
+    #define INVALID_SOCKET (-1)
+    #define ISVALIDSOCKET(fd) ((fd) >= 0)
+    #define SOCKET_ERROR_AGAIN EAGAIN
+#endif
+
+/* ============================================================
+ * 配置常量
+ * ============================================================ */
+#define DEFAULT_HOST "127.0.0.1"
+#define DEFAULT_PORT 8080
+#define BUFFER_SIZE 65536
+#define MAX_LINE 4096
+
+/* ============================================================
+ * 全局状态
+ * ============================================================ */
+static struct {
+    char host[256];
+    int  port;
+    int  verbose;
+} g_config = {
+    .host    = DEFAULT_HOST,
+    .port    = DEFAULT_PORT,
+    .verbose = 0
+};
+
+/* ============================================================
+ * 工具函数
+ * ============================================================ */
+
+/** 去除字符串首尾空白 */
+static char* trim_whitespace(char* str)
+{
+    if (!str) return NULL;
+    char* end;
+    while (isspace((unsigned char)*str)) str++;
+    if (*str == 0) return str;
+    end = str + strlen(str) - 1;
+    while (end > str && isspace((unsigned char)*end)) end--;
+    *(end + 1) = 0;
+    return str;
+}
+
+/** Base64 解码 (用于 JWT) */
+static int base64_decode(const char* in, size_t in_len, unsigned char* out, size_t* out_len)
+{
+    static const unsigned char decode_table[256] = {
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x3E,0xFF,0xFF,0xFF,0x3F,
+        0x34,0x35,0x36,0x37,0x38,0x39,0x3A,0x3B,0x3C,0x3D,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0x00,0x01,0x02,0x03,0x04,0x05,0x06,0x07,0x08,0x09,0x0A,0x0B,0x0C,0x0D,0x0E,
+        0x0F,0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x18,0x19,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0x1A,0x1B,0x1C,0x1D,0x1E,0x1F,0x20,0x21,0x22,0x23,0x24,0x25,0x26,0x27,0x28,
+        0x29,0x2A,0x2B,0x2C,0x2D,0x2E,0x2F,0x30,0x31,0x32,0x33,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
+        0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF
+    };
+
+    /* 移除 '=' 填充并计算解码长度 */
+    size_t valid_len = in_len;
+    while (valid_len > 0 && in[valid_len - 1] == '=') valid_len--;
+    *out_len = (valid_len * 6) / 8;
+
+    /* 将 URL-safe Base64 转为标准 Base64 */
+    unsigned char* buf = (unsigned char*)in;
+    unsigned char local_buf[4096];
+    int use_local = 0;
+    int i;
+
+    for (i = 0; i < (int)in_len; i++) {
+        if (in[i] == '-' || in[i] == '_') {
+            use_local = 1;
+            break;
+        }
+    }
+
+    if (use_local) {
+        if (in_len > sizeof(local_buf)) return -1;
+        for (i = 0; i < (int)in_len; i++) {
+            if (in[i] == '-')
+                local_buf[i] = '+';
+            else if (in[i] == '_')
+                local_buf[i] = '/';
+            else
+                local_buf[i] = (unsigned char)in[i];
+        }
+        buf = local_buf;
+    }
+
+    size_t out_idx = 0;
+    for (i = 0; i < (int)valid_len; i += 4) {
+        unsigned char b[4] = {0, 0, 0, 0};
+        int j;
+        for (j = 0; j < 4 && (i + j) < (int)valid_len; j++) {
+            b[j] = decode_table[buf[i + j]];
+            if (b[j] == 0xFF) return -1; /* 非法字符 */
+        }
+        if (out_idx < *out_len) out[out_idx++] = (b[0] << 2) | (b[1] >> 4);
+        if (out_idx < *out_len) out[out_idx++] = (b[1] << 4) | (b[2] >> 2);
+        if (out_idx < *out_len) out[out_idx++] = (b[2] << 6) | b[3];
+    }
+    *out_len = out_idx;
+    return 0;
+}
+
+/** 格式化 JSON 输出 (简单缩进) */
+static void print_json(const char* json, int indent)
+{
+    int in_string = 0;
+    int level = indent;
+    int first = 1;
+
+    for (const char* p = json; *p; p++) {
+        if (*p == '"' && (p == json || *(p - 1) != '\\')) {
+            in_string = !in_string;
+            putchar(*p);
+            continue;
+        }
+        if (in_string) {
+            putchar(*p);
+            continue;
+        }
+        if (*p == '{' || *p == '[') {
+            putchar(*p);
+            putchar('\n');
+            level++;
+            for (int i = 0; i < level; i++) putchar(' ');
+            first = 1;
+        } else if (*p == '}' || *p == ']') {
+            putchar('\n');
+            level--;
+            for (int i = 0; i < level; i++) putchar(' ');
+            putchar(*p);
+        } else if (*p == ',') {
+            putchar(',');
+            putchar('\n');
+            for (int i = 0; i < level; i++) putchar(' ');
+            first = 1;
+        } else if (*p == ':') {
+            putchar(':');
+            putchar(' ');
+        } else if (!isspace((unsigned char)*p)) {
+            putchar(*p);
+        }
+    }
+    if (!first) putchar('\n');
+}
+
+/* ============================================================
+ * HTTP 客户端
+ * ============================================================ */
+
+/** 创建 TCP 连接 */
+static socket_t tcp_connect(const char* host, int port)
+{
+    struct hostent* he;
+    struct sockaddr_in addr;
+    socket_t fd;
+
+#ifdef _WIN32
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        fprintf(stderr, "[-] WSAStartup 失败\n");
+        return INVALID_SOCKET;
+    }
+#endif
+
+    he = gethostbyname(host);
+    if (!he) {
+        fprintf(stderr, "[-] 无法解析主机: %s\n", host);
+        return INVALID_SOCKET;
+    }
+
+    fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (!ISVALIDSOCKET(fd)) {
+        fprintf(stderr, "[-] 创建 socket 失败\n");
+        return INVALID_SOCKET;
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((unsigned short)port);
+    memcpy(&addr.sin_addr, he->h_addr_list[0], he->h_length);
+
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        fprintf(stderr, "[-] 连接 %s:%d 失败\n", host, port);
+        CLOSE_SOCKET(fd);
+        return INVALID_SOCKET;
+    }
+
+    return fd;
+}
+
+/** 发送 HTTP 请求并接收响应 */
+static int http_request(
+    const char* method,
+    const char* path,
+    const char* body,
+    const char* content_type,
+    char* response,
+    size_t resp_size)
+{
+    socket_t fd = tcp_connect(g_config.host, g_config.port);
+    if (!ISVALIDSOCKET(fd)) return -1;
+
+    char request[BUFFER_SIZE];
+    int len;
+
+    if (body && strlen(body) > 0) {
+        len = snprintf(request, sizeof(request),
+            "%s %s HTTP/1.1\r\n"
+            "Host: %s:%d\r\n"
+            "Content-Type: %s\r\n"
+            "Content-Length: %zu\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            method, path,
+            g_config.host, g_config.port,
+            content_type ? content_type : "application/json",
+            strlen(body),
+            body);
+    } else {
+        len = snprintf(request, sizeof(request),
+            "%s %s HTTP/1.1\r\n"
+            "Host: %s:%d\r\n"
+            "Connection: close\r\n"
+            "\r\n",
+            method, path,
+            g_config.host, g_config.port);
+    }
+
+    if (len < 0 || (size_t)len >= sizeof(request)) {
+        fprintf(stderr, "[-] 请求过长\n");
+        CLOSE_SOCKET(fd);
+        return -1;
+    }
+
+    if (g_config.verbose) {
+        printf("[*] 发送请求:\n%s\n", request);
+    }
+
+    /* 发送请求 */
+    int sent = 0;
+    while (sent < len) {
+        int n = (int)send(fd, request + sent, len - sent, 0);
+        if (n <= 0) {
+            fprintf(stderr, "[-] 发送请求失败\n");
+            CLOSE_SOCKET(fd);
+            return -1;
+        }
+        sent += n;
+    }
+
+    /* 接收响应 */
+    size_t total = 0;
+    int n;
+    while (total < resp_size - 1) {
+        n = (int)recv(fd, response + total, resp_size - 1 - total, 0);
+        if (n <= 0) break;
+        total += (size_t)n;
+    }
+    response[total] = 0;
+
+    CLOSE_SOCKET(fd);
+
+    if (total == 0) {
+        fprintf(stderr, "[-] 未收到响应\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+/** 从 HTTP 响应中提取 body (在 \r\n\r\n 之后) */
+static const char* http_get_body(const char* response)
+{
+    const char* body = strstr(response, "\r\n\r\n");
+    if (body) return body + 4;
+    return response;
+}
+
+/** 解析 HTTP 状态码 */
+static int http_get_status(const char* response)
+{
+    int code = 0;
+    if (sscanf(response, "HTTP/1.%*d %d", &code) == 1 ||
+        sscanf(response, "HTTP/1.%*d %d", &code) == 1) {
+        return code;
+    }
+    return 0;
+}
+
+/* ============================================================
+ * 命令处理函数
+ * ============================================================ */
+
+/** 处理 health 命令 */
+static int cmd_health(int argc, char** argv)
+{
+    (void)argc;
+    (void)argv;
+
+    printf("[*] 检查服务器健康状态: %s:%d\n", g_config.host, g_config.port);
+
+    char response[BUFFER_SIZE] = {0};
+    if (http_request("GET", "/api/health", NULL, NULL, response, sizeof(response)) != 0) {
+        printf("[-] 服务器未响应\n");
+        return -1;
+    }
+
+    int status = http_get_status(response);
+    const char* body = http_get_body(response);
+
+    printf("[*] HTTP %d\n", status);
+
+    if (status >= 200 && status < 300) {
+        printf("[+] 服务器运行正常\n");
+        if (strlen(body) > 0) {
+            printf("    响应: ");
+            print_json(body, 4);
+        }
+        return 0;
+    } else if (status >= 400) {
+        printf("[-] 服务器返回错误\n");
+        if (strlen(body) > 0) {
+            printf("    响应: ");
+            print_json(body, 4);
+        }
+        return -1;
+    } else {
+        printf("[?] 未知状态码\n");
+        if (strlen(body) > 0) {
+            printf("    响应: %s\n", body);
+        }
+        return -1;
+    }
+}
+
+/** 处理 endpoint 命令 */
+static int cmd_endpoint(int argc, char** argv)
+{
+    if (argc < 1) {
+        fprintf(stderr, "用法: endpoint <path> [method] [body]\n");
+        fprintf(stderr, "  path   - API 路径, 如 /api/user/profile?id=1\n");
+        fprintf(stderr, "  method - HTTP 方法 (GET/POST/PUT/DELETE, 默认 GET)\n");
+        fprintf(stderr, "  body   - POST/PUT 请求体 (JSON 字符串)\n");
+        return -1;
+    }
+
+    const char* path   = argv[0];
+    const char* method = (argc >= 2) ? argv[1] : "GET";
+    const char* body   = (argc >= 3) ? argv[2] : NULL;
+
+    printf("[*] %s %s%s%s\n", method, path,
+           body ? " body: " : "", body ? body : "");
+
+    char response[BUFFER_SIZE] = {0};
+    if (http_request(method, path, body, "application/json",
+                      response, sizeof(response)) != 0) {
+        printf("[-] 请求失败\n");
+        return -1;
+    }
+
+    int status = http_get_status(response);
+    const char* resp_body = http_get_body(response);
+
+    printf("[*] HTTP %d\n", status);
+    if (strlen(resp_body) > 0) {
+        print_json(resp_body, 0);
+    }
+    return (status >= 200 && status < 300) ? 0 : -1;
+}
+
+/** 解码 JWT 的单个部分 (Base64) */
+static void decode_jwt_part(const char* part, size_t len)
+{
+    unsigned char decoded[4096];
+    size_t out_len = 0;
+
+    if (base64_decode(part, len, decoded, &out_len) != 0) {
+        printf("        [解码失败 - 无效 Base64]\n");
+        return;
+    }
+    decoded[out_len] = 0;
+
+    printf("        ");
+    print_json((const char*)decoded, 8);
+}
+
+/** 处理 token 命令 - 解码并验证 JWT */
+static int cmd_token(int argc, char** argv)
+{
+    if (argc < 1) {
+        fprintf(stderr, "用法: token <jwt_token>\n");
+        return -1;
+    }
+
+    const char* token = argv[0];
+    printf("[*] JWT 令牌分析\n");
+    printf("    令牌长度: %zu 字符\n", strlen(token));
+    printf("    令牌前32位: ");
+    for (int i = 0; i < 32 && token[i]; i++) putchar(token[i]);
+    if (strlen(token) > 32) printf("...");
+    printf("\n\n");
+
+    /* 按 '.' 分割 JWT */
+    const char* parts[3];
+    size_t part_lens[3];
+    int part_count = 0;
+
+    const char* start = token;
+    for (int i = 0; i < 3; i++) {
+        const char* dot = strchr(start, '.');
+        if (dot && i < 2) {
+            parts[i] = start;
+            part_lens[i] = (size_t)(dot - start);
+            start = dot + 1;
+            part_count++;
+        } else {
+            parts[i] = start;
+            part_lens[i] = strlen(start);
+            part_count++;
+            break;
+        }
+    }
+
+    if (part_count < 2) {
+        printf("[-] 无效的 JWT 格式: 需要至少 2 个部分 (header.payload)\n");
+        return -1;
+    }
+
+    /* 解码 Header */
+    printf("  [1] Header:\n");
+    decode_jwt_part(parts[0], part_lens[0]);
+
+    /* 解码 Payload */
+    printf("  [2] Payload:\n");
+    decode_jwt_part(parts[1], part_lens[1]);
+
+    /* 检查 Signature */
+    if (part_count >= 3 && part_lens[2] > 0) {
+        printf("  [3] Signature: %zu 字节 (Base64 编码)\n", part_lens[2]);
+    } else {
+        printf("  [3] Signature: 无\n");
+        printf("[-] 警告: 令牌无签名, 可能被篡改!\n");
+    }
+
+    /* 从 payload 中提取过期时间 */
+    unsigned char payload_decoded[4096];
+    size_t payload_len = 0;
+    if (base64_decode(parts[1], part_lens[1], payload_decoded, &payload_len) == 0) {
+        payload_decoded[payload_len] = 0;
+
+        /* 查找 exp 字段 */
+        const char* exp_str = strstr((const char*)payload_decoded, "\"exp\"");
+        if (exp_str) {
+            long exp_val = 0;
+            const char* num_start = strchr(exp_str, ':');
+            if (num_start) {
+                exp_val = strtol(num_start + 1, NULL, 10);
+                if (exp_val > 0) {
+                    time_t now = time(NULL);
+                    time_t exp_time = (time_t)exp_val;
+                    printf("\n  [*] 过期时间: %s", ctime(&exp_time));
+                    if (now >= exp_time) {
+                        printf("  [-] 令牌已过期!\n");
+                    } else {
+                        double remaining = difftime(exp_time, now);
+                        printf("  [+] 令牌有效, 剩余 %.0f 秒\n", remaining);
+                    }
+                }
+            }
+        }
+
+        /* 查找 sub (user_id) 字段 */
+        const char* sub_str = strstr((const char*)payload_decoded, "\"sub\"");
+        if (sub_str) {
+            const char* val_start = strchr(sub_str, ':');
+            if (val_start) {
+                val_start++;
+                while (*val_start && isspace((unsigned char)*val_start)) val_start++;
+                if (*val_start == '"') {
+                    val_start++;
+                    const char* val_end = strchr(val_start, '"');
+                    if (val_end) {
+                        printf("  [*] 用户 ID: %.*s\n",
+                               (int)(val_end - val_start), val_start);
+                    }
+                }
+            }
+        }
+    }
+
+    return 0;
+}
+
+/** 处理 user list 命令 */
+static int cmd_user_list(void)
+{
+    printf("[*] 获取用户列表...\n");
+
+    char response[BUFFER_SIZE] = {0};
+    if (http_request("GET", "/api/users", NULL, NULL,
+                      response, sizeof(response)) != 0) {
+        printf("[-] 请求失败\n");
+        return -1;
+    }
+
+    int status = http_get_status(response);
+    const char* body = http_get_body(response);
+
+    if (status >= 200 && status < 300) {
+        printf("[+] 用户列表 (HTTP %d):\n", status);
+        if (strlen(body) > 0) {
+            print_json(body, 0);
+        }
+        return 0;
+    } else {
+        printf("[-] HTTP %d\n", status);
+        if (strlen(body) > 0) {
+            print_json(body, 4);
+        }
+        return -1;
+    }
+}
+
+/** 处理 user get 命令 */
+static int cmd_user_get(const char* user_id)
+{
+    printf("[*] 获取用户信息: %s\n", user_id);
+
+    char path[512];
+    snprintf(path, sizeof(path), "/api/user/profile?id=%s", user_id);
+
+    char response[BUFFER_SIZE] = {0};
+    if (http_request("GET", path, NULL, NULL,
+                      response, sizeof(response)) != 0) {
+        printf("[-] 请求失败\n");
+        return -1;
+    }
+
+    int status = http_get_status(response);
+    const char* body = http_get_body(response);
+
+    if (status >= 200 && status < 300) {
+        printf("[+] 用户信息 (HTTP %d):\n", status);
+        if (strlen(body) > 0) {
+            print_json(body, 0);
+        }
+        return 0;
+    } else {
+        printf("[-] HTTP %d\n", status);
+        if (strlen(body) > 0) {
+            print_json(body, 4);
+        }
+        return -1;
+    }
+}
+
+/** 处理 user create 命令 */
+static int cmd_user_create(const char* username, const char* password, const char* nickname)
+{
+    printf("[*] 创建用户: username=%s", username);
+    if (nickname) printf(", nickname=%s", nickname);
+    printf("\n");
+
+    char body[1024];
+    if (nickname) {
+        snprintf(body, sizeof(body),
+            "{\"username\":\"%s\",\"password\":\"%s\",\"nickname\":\"%s\"}",
+            username, password, nickname);
+    } else {
+        snprintf(body, sizeof(body),
+            "{\"username\":\"%s\",\"password\":\"%s\"}",
+            username, password);
+    }
+
+    char response[BUFFER_SIZE] = {0};
+    if (http_request("POST", "/api/user/register", body, "application/json",
+                      response, sizeof(response)) != 0) {
+        printf("[-] 请求失败\n");
+        return -1;
+    }
+
+    int status = http_get_status(response);
+    const char* resp_body = http_get_body(response);
+
+    if (status >= 200 && status < 300) {
+        printf("[+] 用户创建成功 (HTTP %d):\n", status);
+        if (strlen(resp_body) > 0) {
+            print_json(resp_body, 0);
+        }
+        return 0;
+    } else {
+        printf("[-] HTTP %d\n", status);
+        if (strlen(resp_body) > 0) {
+            print_json(resp_body, 4);
+        }
+        return -1;
+    }
+}
+
+/** 处理 user delete 命令 */
+static int cmd_user_delete(const char* user_id)
+{
+    printf("[*] 删除用户: %s\n", user_id);
+
+    char path[512];
+    snprintf(path, sizeof(path), "/api/user?id=%s", user_id);
+
+    char response[BUFFER_SIZE] = {0};
+    if (http_request("DELETE", path, NULL, NULL,
+                      response, sizeof(response)) != 0) {
+        printf("[-] 请求失败\n");
+        return -1;
+    }
+
+    int status = http_get_status(response);
+    const char* body = http_get_body(response);
+
+    if (status >= 200 && status < 300) {
+        printf("[+] 用户删除成功 (HTTP %d)\n", status);
+        if (strlen(body) > 0) {
+            print_json(body, 0);
+        }
+        return 0;
+    } else {
+        printf("[-] HTTP %d\n", status);
+        if (strlen(body) > 0) {
+            print_json(body, 4);
+        }
+        return -1;
+    }
+}
+
+/** 处理 user 命令 */
+static int cmd_user(int argc, char** argv)
+{
+    if (argc < 1) {
+        printf("用法:\n");
+        printf("  user list                     - 列出所有用户\n");
+        printf("  user get <id>                 - 获取用户信息\n");
+        printf("  user create <username> <pass> [nickname] - 创建用户\n");
+        printf("  user delete <id>              - 删除用户\n");
+        return -1;
+    }
+
+    const char* subcmd = argv[0];
+
+    if (strcmp(subcmd, "list") == 0) {
+        return cmd_user_list();
+    } else if (strcmp(subcmd, "get") == 0) {
+        if (argc < 2) {
+            fprintf(stderr, "用法: user get <user_id>\n");
+            return -1;
+        }
+        return cmd_user_get(argv[1]);
+    } else if (strcmp(subcmd, "create") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "用法: user create <username> <password> [nickname]\n");
+            return -1;
+        }
+        return cmd_user_create(argv[1], argv[2], argc >= 4 ? argv[3] : NULL);
+    } else if (strcmp(subcmd, "delete") == 0) {
+        if (argc < 2) {
+            fprintf(stderr, "用法: user delete <user_id>\n");
+            return -1;
+        }
+        return cmd_user_delete(argv[1]);
+    } else {
+        fprintf(stderr, "未知 user 子命令: %s\n", subcmd);
+        fprintf(stderr, "可用命令: list, get, create, delete\n");
+        return -1;
+    }
+}
+
+/** 处理 help 命令 */
+static int cmd_help(void)
+{
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════╗\n");
+    printf("║        Chrono-shift CLI 调试接口                        ║\n");
+    printf("╚══════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+    printf("可用命令:\n");
+    printf("  ┌─────────────────────────────────────────────────────────┐\n");
+    printf("  │ health                        检查服务器健康状态       │\n");
+    printf("  │ endpoint <path> [method] [body]  测试 API 端点         │\n");
+    printf("  │ token   <jwt_token>           解码并分析 JWT 令牌       │\n");
+    printf("  │ user    list                  列出所有用户              │\n");
+    printf("  │ user    get <id>              获取用户信息              │\n");
+    printf("  │ user    create <user> <pass>  创建新用户                │\n");
+    printf("  │ user    delete <id>           删除用户                  │\n");
+    printf("  │ verbose                      切换详细模式               │\n");
+    printf("  │ help                         显示此帮助信息             │\n");
+    printf("  │ exit / quit                  退出调试 CLI               │\n");
+    printf("  └─────────────────────────────────────────────────────────┘\n");
+    printf("\n");
+    printf("配置:\n");
+    printf("  当前服务器: %s:%d\n", g_config.host, g_config.port);
+    printf("  详细模式:   %s\n", g_config.verbose ? "开" : "关");
+    printf("\n");
+    printf("提示: 可用环境变量 CHRONO_HOST 和 CHRONO_PORT 修改目标服务器\n");
+    printf("\n");
+    return 0;
+}
+
+/* ============================================================
+ * 主处理循环
+ * ============================================================ */
+
+static int process_line(char* line)
+{
+    char* argv[32];
+    int argc = 0;
+
+    /* 按空格分割 */
+    char* token = strtok(line, " \t");
+    while (token && argc < 32) {
+        argv[argc++] = token;
+        token = strtok(NULL, " \t");
+    }
+
+    if (argc == 0) return 0;
+
+    const char* cmd = argv[0];
+
+    if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) {
+        printf("再见!\n");
+        return 1;
+    } else if (strcmp(cmd, "help") == 0 || strcmp(cmd, "?") == 0) {
+        cmd_help();
+    } else if (strcmp(cmd, "health") == 0) {
+        if (cmd_health(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "endpoint") == 0) {
+        if (cmd_endpoint(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "token") == 0) {
+        if (cmd_token(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "user") == 0) {
+        if (cmd_user(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "verbose") == 0) {
+        g_config.verbose = !g_config.verbose;
+        printf("[*] 详细模式: %s\n", g_config.verbose ? "开" : "关");
+    } else if (strcmp(cmd, "connect") == 0 && argc >= 3) {
+        snprintf(g_config.host, sizeof(g_config.host), "%s", argv[1]);
+        g_config.port = atoi(argv[2]);
+        printf("[*] 目标服务器: %s:%d\n", g_config.host, g_config.port);
+    } else {
+        fprintf(stderr, "未知命令: %s (输入 help 查看帮助)\n", cmd);
+    }
+
+    return 0;
+}
+
+/* ============================================================
+ * 程序入口
+ * ============================================================ */
+
+int main(int argc, char** argv)
+{
+    /* 解析环境变量 */
+    const char* env_host = getenv("CHRONO_HOST");
+    const char* env_port = getenv("CHRONO_PORT");
+    if (env_host) {
+        snprintf(g_config.host, sizeof(g_config.host), "%s", env_host);
+    }
+    if (env_port) {
+        g_config.port = atoi(env_port);
+        if (g_config.port <= 0 || g_config.port > 65535) {
+            g_config.port = DEFAULT_PORT;
+        }
+    }
+
+    /* 支持命令行直接执行: debug_cli health */
+    if (argc > 1) {
+        /* 将 argv[1..] 合并为一行 */
+        char line[4096] = {0};
+        int pos = 0;
+        for (int i = 1; i < argc; i++) {
+            if (i > 1) line[pos++] = ' ';
+            size_t arg_len = strlen(argv[i]);
+            if (pos + (int)arg_len >= (int)sizeof(line) - 1) break;
+            memcpy(line + pos, argv[i], arg_len);
+            pos += (int)arg_len;
+        }
+        line[pos] = 0;
+        return process_line(line);
+    }
+
+    /* 交互模式 */
+    printf("\n");
+    printf("╔══════════════════════════════════════════════════════════╗\n");
+    printf("║     Chrono-shift CLI 调试接口 v1.0                      ║\n");
+    printf("║     输入 help 查看可用命令, exit 退出                    ║\n");
+    printf("╚══════════════════════════════════════════════════════════╝\n");
+    printf("\n");
+
+    char line[4096];
+    while (1) {
+        printf("debug> ");
+        fflush(stdout);
+
+        if (!fgets(line, sizeof(line), stdin)) {
+            printf("\n");
+            break;
+        }
+
+        /* 去除换行符 */
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+            line[--len] = 0;
+        }
+
+        if (process_line(line) != 0) break;
+    }
+
+    return 0;
+}

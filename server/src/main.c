@@ -1,10 +1,10 @@
 /**
  * Chrono-shift 服务端入口
  * 语言标准: C99
- * 编译器: GCC 15.2.0 (MinGW)
- * 平台: Windows 10/11 x64
+ * 跨平台: Linux + Windows
  */
 
+#include "platform_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,7 +146,7 @@ int main(int argc, char* argv[])
     /* 主循环 */
     while (g_running) {
         /* 每秒检查运行状态 */
-        Sleep(1000);
+        msleep(1000);
     }
 
     /* 清理 */

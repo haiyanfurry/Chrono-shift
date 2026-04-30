@@ -78,3 +78,127 @@ pub extern "C" fn rust_verify_jwt(token: *const c_char) -> *mut c_char {
 
     CString::new(token_data.claims.sub).unwrap_or_default().into_raw()
 }
+
+// ============================================================
+// 单元测试
+// ============================================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn test_generate_jwt_valid() {
+        let uid = CString::new("user_42").unwrap();
+        let token_ptr = rust_generate_jwt(uid.as_ptr());
+        assert!(!token_ptr.is_null());
+
+        let token = unsafe { CStr::from_ptr(token_ptr) }.to_str().unwrap().to_string();
+        unsafe { CString::from_raw(token_ptr) };
+
+        // JWT 格式: header.payload.signature (3 部分)
+        let parts: Vec<&str> = token.split('.').collect();
+        assert_eq!(parts.len(), 3, "JWT 应有 3 部分");
+        assert!(!parts[0].is_empty());
+        assert!(!parts[1].is_empty());
+        assert!(!parts[2].is_empty());
+    }
+
+    #[test]
+    fn test_generate_jwt_null() {
+        let token_ptr = rust_generate_jwt(std::ptr::null());
+        assert!(token_ptr.is_null());
+    }
+
+    #[test]
+    fn test_generate_jwt_empty_id() {
+        let uid = CString::new("").unwrap();
+        let token_ptr = rust_generate_jwt(uid.as_ptr());
+        assert!(!token_ptr.is_null());
+        unsafe { CString::from_raw(token_ptr) };
+    }
+
+    #[test]
+    fn test_verify_jwt_valid() {
+        let uid = CString::new("user_99").unwrap();
+        let token_ptr = rust_generate_jwt(uid.as_ptr());
+        assert!(!token_ptr.is_null());
+
+        let extracted_uid_ptr = rust_verify_jwt(token_ptr);
+        assert!(!extracted_uid_ptr.is_null());
+
+        let extracted = unsafe { CStr::from_ptr(extracted_uid_ptr) }.to_str().unwrap().to_string();
+        assert_eq!(extracted, "user_99", "JWT 验证应提取正确的用户 ID");
+
+        unsafe { CString::from_raw(token_ptr) };
+        unsafe { CString::from_raw(extracted_uid_ptr) };
+    }
+
+    #[test]
+    fn test_verify_jwt_invalid_token() {
+        let invalid = CString::new("invalid.jwt.token").unwrap();
+        let result = rust_verify_jwt(invalid.as_ptr());
+        assert!(result.is_null(), "无效 JWT 应返回 NULL");
+    }
+
+    #[test]
+    fn test_verify_jwt_tampered() {
+        let uid = CString::new("user_1").unwrap();
+        let token_ptr = rust_generate_jwt(uid.as_ptr());
+        assert!(!token_ptr.is_null());
+
+        let mut token = unsafe { CStr::from_ptr(token_ptr) }.to_str().unwrap().to_string();
+        unsafe { CString::from_raw(token_ptr) };
+
+        // 篡改 payload 部分
+        token.push_str("x");
+
+        let tampered = CString::new(token).unwrap();
+        let result = rust_verify_jwt(tampered.as_ptr());
+        assert!(result.is_null(), "被篡改的 JWT 应验证失败");
+    }
+
+    #[test]
+    fn test_verify_jwt_null() {
+        let result = rust_verify_jwt(std::ptr::null());
+        assert!(result.is_null());
+    }
+
+    #[test]
+    fn test_generate_multiple_tokens() {
+        let uid = CString::new("user_1").unwrap();
+        let token1_ptr = rust_generate_jwt(uid.as_ptr());
+        let token2_ptr = rust_generate_jwt(uid.as_ptr());
+        assert!(!token1_ptr.is_null());
+        assert!(!token2_ptr.is_null());
+
+        let token1 = unsafe { CStr::from_ptr(token1_ptr) }.to_str().unwrap().to_string();
+        let token2 = unsafe { CStr::from_ptr(token2_ptr) }.to_str().unwrap().to_string();
+
+        assert_ne!(token1, token2);
+
+        unsafe { CString::from_raw(token1_ptr) };
+        unsafe { CString::from_raw(token2_ptr) };
+    }
+
+    #[test]
+    fn test_verify_jwt_expired() {
+        // 手动构造一个已过期的 JWT
+        let expired_claims = Claims {
+            sub: "expired_user".to_string(),
+            exp: 1000000000,
+            iat: 1000000000,
+            role: "user".to_string(),
+        };
+
+        let token = encode(
+            &Header::default(),
+            &expired_claims,
+            &EncodingKey::from_secret(SECRET.as_ref()),
+        ).unwrap();
+
+        let token_cstr = CString::new(token).unwrap();
+        let result = rust_verify_jwt(token_cstr.as_ptr());
+        assert!(result.is_null(), "过期 JWT 应验证失败");
+    }
+}

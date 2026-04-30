@@ -16,8 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include "platform_compat.h"
 #include <sys/stat.h>
-#include <windows.h>
 
 /* ============================================================
  * 内部常量
@@ -137,7 +137,7 @@ static int ensure_dir(const char* path)
 {
     struct stat st = {0};
     if (stat(path, &st) == -1) {
-#ifdef _WIN32
+#ifdef PLATFORM_WINDOWS
         return _mkdir(path);
 #else
         return mkdir(path, DB_DIR_MODE);
@@ -323,19 +323,20 @@ int db_get_user_by_username(const char* username, int64_t* user_id,
     char users_dir[MAX_PATH];
     get_users_dir(users_dir, sizeof(users_dir));
 
-    /* 使用 Windows API 遍历目录 */
-    char search_path[MAX_PATH];
-    snprintf(search_path, sizeof(search_path), "%s/*.json", users_dir);
-
-    WIN32_FIND_DATAA find_data;
-    HANDLE hFind = FindFirstFileA(search_path, &find_data);
-    if (hFind == INVALID_HANDLE_VALUE) return -1;
+    /* 使用跨平台 DirIterator 遍历目录 */
+    DirIterator it;
+    if (dir_open(&it, users_dir) != 0) return -1;
 
     int found = 0;
+    char name_buffer[256];
 
-    do {
+    while (dir_next(&it, name_buffer, sizeof(name_buffer)) == 0) {
+        /* 只处理 .json 文件 */
+        size_t len = strlen(name_buffer);
+        if (len < 6 || strcmp(name_buffer + len - 5, ".json") != 0) continue;
+
         char filepath[MAX_PATH];
-        snprintf(filepath, sizeof(filepath), "%s/%s", users_dir, find_data.cFileName);
+        snprintf(filepath, sizeof(filepath), "%s/%s", users_dir, name_buffer);
 
         char* content = read_file_content(filepath);
         if (!content) continue;
@@ -364,9 +365,9 @@ int db_get_user_by_username(const char* username, int64_t* user_id,
 
         json_value_free(root);
         if (found) break;
-    } while (FindNextFileA(hFind, &find_data) != 0);
+    }
 
-    FindClose(hFind);
+    dir_close(&it);
     return found ? 0 : -1;
 }
 
@@ -451,17 +452,19 @@ int db_search_users(const char* keyword, int64_t* results, size_t max_results, s
     char users_dir[MAX_PATH];
     get_users_dir(users_dir, sizeof(users_dir));
 
-    /* 使用 Windows API 遍历目录 */
-    char search_path[MAX_PATH];
-    snprintf(search_path, sizeof(search_path), "%s/*.json", users_dir);
+    /* 使用跨平台 DirIterator 遍历目录 */
+    DirIterator it;
+    if (dir_open(&it, users_dir) != 0) return 0;
 
-    WIN32_FIND_DATAA find_data;
-    HANDLE hFind = FindFirstFileA(search_path, &find_data);
-    if (hFind == INVALID_HANDLE_VALUE) return 0;
+    char name_buffer[256];
 
-    while (*count < max_results) {
+    while (*count < max_results && dir_next(&it, name_buffer, sizeof(name_buffer)) == 0) {
+        /* 只处理 .json 文件 */
+        size_t len = strlen(name_buffer);
+        if (len < 6 || strcmp(name_buffer + len - 5, ".json") != 0) continue;
+
         char filepath[MAX_PATH];
-        snprintf(filepath, sizeof(filepath), "%s/%s", users_dir, find_data.cFileName);
+        snprintf(filepath, sizeof(filepath), "%s/%s", users_dir, name_buffer);
 
         char* content = read_file_content(filepath);
         if (content) {
@@ -493,11 +496,9 @@ int db_search_users(const char* keyword, int64_t* results, size_t max_results, s
                 json_value_free(root);
             }
         }
-
-        if (FindNextFileA(hFind, &find_data) == 0) break;
     }
 
-    FindClose(hFind);
+    dir_close(&it);
     return 0;
 }
 

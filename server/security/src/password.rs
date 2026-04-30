@@ -58,3 +58,121 @@ pub extern "C" fn rust_verify_password(
         Err(_) => 0,
     }
 }
+
+// ============================================================
+// 单元测试
+// ============================================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn test_hash_password_valid() {
+        let pwd = CString::new("TestPassword123!@#").unwrap();
+        let hash_ptr = rust_hash_password(pwd.as_ptr());
+        assert!(!hash_ptr.is_null());
+
+        let hash_str = unsafe { CStr::from_ptr(hash_ptr) }.to_str().unwrap().to_string();
+        unsafe { CString::from_raw(hash_ptr) }; // free
+
+        // Argon2id 哈希以 "$argon2id$" 开头
+        assert!(hash_str.starts_with("$argon2id$"));
+        assert!(hash_str.len() > 50);
+    }
+
+    #[test]
+    fn test_hash_password_null() {
+        let hash_ptr = rust_hash_password(std::ptr::null());
+        assert!(hash_ptr.is_null());
+    }
+
+    #[test]
+    fn test_hash_password_empty() {
+        let pwd = CString::new("").unwrap();
+        let hash_ptr = rust_hash_password(pwd.as_ptr());
+        assert!(!hash_ptr.is_null());
+        let hash_str = unsafe { CStr::from_ptr(hash_ptr) }.to_str().unwrap().to_string();
+        unsafe { CString::from_raw(hash_ptr) };
+        assert!(hash_str.starts_with("$argon2id$"));
+    }
+
+    #[test]
+    fn test_verify_password_correct() {
+        let pwd = CString::new("MySecureP@ssw0rd").unwrap();
+        let hash_ptr = rust_hash_password(pwd.as_ptr());
+        assert!(!hash_ptr.is_null());
+
+        let result = rust_verify_password(pwd.as_ptr(), hash_ptr);
+        assert_eq!(result, 1);
+
+        unsafe { CString::from_raw(hash_ptr) };
+    }
+
+    #[test]
+    fn test_verify_password_wrong() {
+        let pwd = CString::new("CorrectPassword").unwrap();
+        let wrong = CString::new("WrongPassword").unwrap();
+        let hash_ptr = rust_hash_password(pwd.as_ptr());
+        assert!(!hash_ptr.is_null());
+
+        let result = rust_verify_password(wrong.as_ptr(), hash_ptr);
+        assert_eq!(result, 0);
+
+        unsafe { CString::from_raw(hash_ptr) };
+    }
+
+    #[test]
+    fn test_verify_password_null() {
+        let pwd = CString::new("test").unwrap();
+        let hash_ptr = rust_hash_password(pwd.as_ptr());
+        assert!(!hash_ptr.is_null());
+
+        let result = rust_verify_password(std::ptr::null(), hash_ptr);
+        assert_eq!(result, -1);
+
+        let result2 = rust_verify_password(pwd.as_ptr(), std::ptr::null());
+        assert_eq!(result2, -1);
+
+        unsafe { CString::from_raw(hash_ptr) };
+    }
+
+    #[test]
+    fn test_verify_password_invalid_hash() {
+        let pwd = CString::new("test").unwrap();
+        let invalid_hash = CString::new("$invalid$hash$format").unwrap();
+
+        let result = rust_verify_password(pwd.as_ptr(), invalid_hash.as_ptr());
+        assert_eq!(result, -1);
+    }
+
+    #[test]
+    fn test_hash_is_unique() {
+        // 相同密码每次哈希结果不同 (因为盐值)
+        let pwd = CString::new("SamePassword").unwrap();
+        let hash1_ptr = rust_hash_password(pwd.as_ptr());
+        let hash2_ptr = rust_hash_password(pwd.as_ptr());
+        assert!(!hash1_ptr.is_null());
+        assert!(!hash2_ptr.is_null());
+
+        let hash1 = unsafe { CStr::from_ptr(hash1_ptr) }.to_str().unwrap().to_string();
+        let hash2 = unsafe { CStr::from_ptr(hash2_ptr) }.to_str().unwrap().to_string();
+
+        assert_ne!(hash1, hash2, "相同密码的两次哈希应该不同（不同盐值）");
+
+        unsafe { CString::from_raw(hash1_ptr) };
+        unsafe { CString::from_raw(hash2_ptr) };
+    }
+
+    #[test]
+    fn test_verify_special_characters() {
+        let special = CString::new("密码123!@#$%^&*()_+-=[]{}|;':\",./<>?~`").unwrap();
+        let hash_ptr = rust_hash_password(special.as_ptr());
+        assert!(!hash_ptr.is_null());
+
+        let result = rust_verify_password(special.as_ptr(), hash_ptr);
+        assert_eq!(result, 1, "特殊字符密码验证应成功");
+
+        unsafe { CString::from_raw(hash_ptr) };
+    }
+}

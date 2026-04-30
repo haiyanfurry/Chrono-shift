@@ -1,13 +1,12 @@
 /**
  * Chrono-shift WebSocket 实现 (RFC 6455)
  * 语言标准: C99
- * 
+ *
  * 完整的 WebSocket 握手、帧编码/解码、掩码处理
+ * 跨平台: 使用 platform_compat.h 抽象层
  */
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <winsock2.h>
+#include "platform_compat.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,7 +25,7 @@
  * WebSocket 连接结构
  * ============================================================ */
 struct WsConnection {
-    SOCKET fd;
+    socket_t fd;
     char peer_addr[64];
     uint16_t peer_port;
     WsMessageCallback on_message;
@@ -42,7 +41,7 @@ struct WsConnection {
 /* 连接池 */
 static WsConnection* s_connections[MAX_WS_CONNECTIONS];
 static size_t s_connection_count = 0;
-static CRITICAL_SECTION s_ws_lock;
+static mutex_t s_ws_lock;
 
 /* ============================================================
  * SHA-1 实现 (用于 WebSocket 握手)
@@ -117,17 +116,17 @@ static void sha1_final(SHA1_CTX* ctx, uint8_t digest[20])
     uint64_t bits = ctx->count * 8;
     uint8_t pad = 0x80;
     sha1_update(ctx, &pad, 1);
-    
+
     while ((ctx->count & 63) != 56) {
         pad = 0x00;
         sha1_update(ctx, &pad, 1);
     }
-    
+
     for (int i = 0; i < 8; i++) {
         pad = (uint8_t)(bits >> (56 - i * 8));
         sha1_update(ctx, &pad, 1);
     }
-    
+
     for (int i = 0; i < 5; i++) {
         digest[i*4+0] = (uint8_t)(ctx->state[i] >> 24);
         digest[i*4+1] = (uint8_t)(ctx->state[i] >> 16);
@@ -139,7 +138,7 @@ static void sha1_final(SHA1_CTX* ctx, uint8_t digest[20])
 /* ============================================================
  * Base64 编码
  * ============================================================ */
-static const char b64_table[] = 
+static const char b64_table[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 static void base64_encode(const uint8_t* input, size_t len, char* output)
@@ -149,7 +148,7 @@ static void base64_encode(const uint8_t* input, size_t len, char* output)
         uint32_t v = (uint32_t)input[i] << 16;
         if (i + 1 < len) v |= (uint32_t)input[i+1] << 8;
         if (i + 2 < len) v |= (uint32_t)input[i+2];
-        
+
         output[j++] = b64_table[(v >> 18) & 0x3F];
         output[j++] = b64_table[(v >> 12) & 0x3F];
         output[j++] = (i + 1 < len) ? b64_table[(v >> 6) & 0x3F] : '=';
@@ -181,14 +180,14 @@ static int ws_generate_accept_key(const char* client_key, char* accept_key, size
  * ============================================================ */
 
 /* 发送 WebSocket 帧 */
-static int ws_send_frame(WsConnection* conn, uint8_t opcode, 
+static int ws_send_frame(WsConnection* conn, uint8_t opcode,
                          const uint8_t* data, uint64_t length)
 {
     uint8_t header[14];
     size_t header_len;
-    
+
     header[0] = 0x80 | opcode; /* FIN + opcode */
-    
+
     if (length < 126) {
         header[1] = (uint8_t)length;
         header_len = 2;
@@ -206,12 +205,12 @@ static int ws_send_frame(WsConnection* conn, uint8_t opcode,
     }
 
     /* 发送头部 */
-    int sent = send(conn->fd, (const char*)header, header_len, 0);
+    int sent = (int)send(conn->fd, (const char*)header, header_len, 0);
     if (sent != (int)header_len) return -1;
 
     /* 发送数据 */
     if (length > 0) {
-        sent = send(conn->fd, (const char*)data, (int)length, 0);
+        sent = (int)send(conn->fd, (const char*)data, (int)length, 0);
         if (sent != (int)length) return -1;
     }
 
@@ -225,10 +224,12 @@ static int ws_process_frame(WsConnection* conn)
     int received;
 
     /* 读取前 2 字节头部 */
-    received = recv(conn->fd, (char*)header, 2, 0);
+    received = (int)recv(conn->fd, (char*)header, 2, 0);
     if (received != 2) return -1;
 
     bool fin = (header[0] & 0x80) != 0;
+    (void)fin; /* 目前未使用，可用于分片重组 */
+
     uint8_t opcode = header[0] & 0x0F;
     bool masked = (header[1] & 0x80) != 0;
     uint64_t payload_length = header[1] & 0x7F;
@@ -262,14 +263,14 @@ static int ws_process_frame(WsConnection* conn)
         uint64_t remaining = payload_length;
         uint64_t offset = 0;
         while (remaining > 0) {
-            int chunk = (int)min(remaining, (uint64_t)65536);
-            received = recv(conn->fd, (char*)(payload + offset), chunk, 0);
+            int chunk = (int)(remaining < 65536 ? remaining : 65536);
+            received = (int)recv(conn->fd, (char*)(payload + offset), chunk, 0);
             if (received <= 0) {
                 free(payload);
                 return -1;
             }
-            offset += received;
-            remaining -= received;
+            offset += (uint64_t)received;
+            remaining -= (uint64_t)received;
         }
 
         /* 解除掩码 */
@@ -318,7 +319,7 @@ static int ws_process_frame(WsConnection* conn)
 
 int ws_init(void)
 {
-    InitializeCriticalSection(&s_ws_lock);
+    mutex_init(&s_ws_lock);
     s_connection_count = 0;
     LOG_INFO("WebSocket 模块初始化完成");
     return 0;
@@ -328,6 +329,11 @@ int ws_handle_upgrade(const HttpRequest* req, HttpResponse* resp,
                       WsMessageCallback on_msg, WsCloseCallback on_close,
                       WsConnectCallback on_connect, void* user_data)
 {
+    (void)on_msg;
+    (void)on_close;
+    (void)on_connect;
+    (void)user_data;
+
     /* 验证 WebSocket 升级请求 */
     const char* upgrade = NULL;
     const char* connection = NULL;
@@ -398,16 +404,16 @@ int ws_close(WsConnection* conn, uint16_t code, const char* reason)
     }
 
     /* 从连接池移除 */
-    EnterCriticalSection(&s_ws_lock);
+    mutex_lock(&s_ws_lock);
     for (size_t i = 0; i < s_connection_count; i++) {
         if (s_connections[i] == conn) {
             s_connections[i] = s_connections[--s_connection_count];
             break;
         }
     }
-    LeaveCriticalSection(&s_ws_lock);
+    mutex_unlock(&s_ws_lock);
 
-    closesocket(conn->fd);
+    close_socket(conn->fd);
     free(conn);
 
     return 0;
@@ -416,13 +422,15 @@ int ws_close(WsConnection* conn, uint16_t code, const char* reason)
 void ws_get_peer_addr(WsConnection* conn, char* addr_buf, size_t buf_size)
 {
     if (conn && addr_buf && buf_size > 0) {
-        strncpy(addr_buf, conn->peer_addr, buf_size - 1);
-        addr_buf[buf_size - 1] = '\0';
+        size_t len = strlen(conn->peer_addr);
+        size_t copy = (len < buf_size - 1) ? len : (buf_size - 1);
+        memcpy(addr_buf, conn->peer_addr, copy);
+        addr_buf[copy] = '\0';
     }
 }
 
 /* 创建新的 WebSocket 连接（从 socket 升级） */
-WsConnection* ws_create_connection(SOCKET fd, const struct sockaddr_in* addr,
+WsConnection* ws_create_connection(socket_t fd, const struct sockaddr_in* addr,
                                     WsMessageCallback on_msg, WsCloseCallback on_close,
                                     WsConnectCallback on_connect, void* user_data)
 {
@@ -440,11 +448,11 @@ WsConnection* ws_create_connection(SOCKET fd, const struct sockaddr_in* addr,
     conn->peer_port = ntohs(addr->sin_port);
 
     /* 添加到连接池 */
-    EnterCriticalSection(&s_ws_lock);
+    mutex_lock(&s_ws_lock);
     if (s_connection_count < MAX_WS_CONNECTIONS) {
         s_connections[s_connection_count++] = conn;
     }
-    LeaveCriticalSection(&s_ws_lock);
+    mutex_unlock(&s_ws_lock);
 
     if (conn->on_connect) {
         conn->on_connect(conn);

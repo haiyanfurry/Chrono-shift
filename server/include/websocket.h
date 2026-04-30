@@ -3,6 +3,7 @@
 
 #include "server.h"
 #include "http_server.h"
+#include "platform_compat.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -41,7 +42,7 @@ int  ws_close(WsConnection* conn, uint16_t code, const char* reason);
 void ws_get_peer_addr(WsConnection* conn, char* addr_buf, size_t buf_size);
 
 /* 内部: 从已升级的 socket 创建 WS 连接 */
-WsConnection* ws_create_connection(SOCKET fd, const struct sockaddr_in* addr,
+WsConnection* ws_create_connection(socket_t fd, const struct sockaddr_in* addr,
                                     WsMessageCallback on_msg, WsCloseCallback on_close,
                                     WsConnectCallback on_connect, void* user_data);
 
