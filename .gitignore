@@ -1,0 +1,33 @@
+# 编译输出
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.a
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 数据库
+server/data/db/
+
+# 证书
+*.crt
+*.key
+*.pem
+
+# 编译目录
+build/
+cmake-build-*/
+
+# Rust
+server/security/target/
+client/security/target/
+
+# 日志
+*.log
