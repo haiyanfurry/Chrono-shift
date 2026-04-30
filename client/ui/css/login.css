@@ -1,0 +1,72 @@
+/**
+ * 登录/注册页面样式
+ */
+
+#page-auth {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--color-primary-bg) 0%, #FFFFFF 100%);
+}
+
+#page-auth.active {
+    display: flex;
+}
+
+.auth-container {
+    width: 100%;
+    max-width: 420px;
+    padding: var(--spacing-xl);
+}
+
+.auth-box {
+    background: var(--color-bg-primary);
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-xxl);
+    box-shadow: 0 8px 32px var(--color-shadow-dark);
+    animation: fadeIn var(--transition-slow);
+}
+
+.auth-logo {
+    text-align: center;
+    margin-bottom: var(--spacing-xxl);
+}
+
+.auth-logo h1 {
+    font-size: var(--font-size-xxl);
+    color: var(--color-primary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.auth-subtitle {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+}
+
+.auth-form {
+    display: none;
+}
+
+.auth-form.active {
+    display: block;
+}
+
+.auth-form .form-group {
+    margin-bottom: var(--spacing-lg);
+}
+
+.auth-form .btn {
+    margin-top: var(--spacing-sm);
+}
+
+.auth-switch {
+    text-align: center;
+    margin-top: var(--spacing-lg);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.auth-switch a {
+    color: var(--color-primary);
+    font-weight: 500;
+}

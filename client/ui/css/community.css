@@ -1,0 +1,164 @@
+/**
+ * 社区模板页面样式
+ */
+
+.community-header,
+.contacts-header,
+.settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-lg) var(--spacing-xl);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.community-header h2,
+.contacts-header h2,
+.settings-header h2 {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+}
+
+/* 模板网格 */
+.template-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--spacing-lg);
+    padding: var(--spacing-xl);
+    overflow-y: auto;
+    flex: 1;
+}
+
+.template-card {
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+    transition: all var(--transition-normal);
+    cursor: pointer;
+}
+
+.template-card:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 4px 16px var(--color-shadow);
+    transform: translateY(-2px);
+}
+
+.template-preview {
+    width: 100%;
+    height: 160px;
+    background: var(--color-bg-tertiary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 48px;
+    color: var(--color-text-tertiary);
+}
+
+.template-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.template-info {
+    padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.template-name {
+    font-weight: 600;
+    font-size: var(--font-size-base);
+    margin-bottom: var(--spacing-xs);
+}
+
+.template-author {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-tertiary);
+}
+
+.template-stats {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-top: var(--spacing-sm);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+}
+
+.template-actions {
+    padding: var(--spacing-sm) var(--spacing-lg) var(--spacing-lg);
+    display: flex;
+    gap: var(--spacing-sm);
+}
+
+.template-actions .btn {
+    flex: 1;
+}
+
+/* 联系人网格 */
+.contacts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--spacing-md);
+    padding: var(--spacing-xl);
+    overflow-y: auto;
+    flex: 1;
+}
+
+.contact-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: var(--spacing-xl);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: center;
+}
+
+.contact-card:hover {
+    border-color: var(--color-primary);
+    background: var(--color-primary-bg);
+}
+
+.contact-card .contact-name {
+    font-weight: 500;
+    margin-top: var(--spacing-sm);
+}
+
+.contact-card .contact-status {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+}
+
+/* 设置页面 */
+.settings-content {
+    padding: var(--spacing-xl);
+    overflow-y: auto;
+    flex: 1;
+}
+
+.settings-section {
+    margin-bottom: var(--spacing-xxl);
+    padding-bottom: var(--spacing-xxl);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.settings-section:last-child {
+    border-bottom: none;
+}
+
+.settings-section h3 {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    margin-bottom: var(--spacing-lg);
+}
+
+.settings-section .form-group {
+    max-width: 360px;
+}
+
+.settings-section .btn {
+    margin-top: var(--spacing-sm);
+}
