@@ -314,7 +314,7 @@ static int ws_process_frame(WsConnection* conn)
 
     /* 触发数据回调 */
     if (conn->on_message && (opcode == WS_OPCODE_TEXT || opcode == WS_OPCODE_BINARY)) {
-        conn->on_message(conn, opcode, payload, (size_t)payload_length);
+        conn->on_message(conn, (enum WsOpcode)opcode, payload, (size_t)payload_length);
     }
 
     free(payload);

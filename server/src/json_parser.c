@@ -166,8 +166,8 @@ static JsonValue* json_parse_value(JsonParser* parser)
     }
 
     switch (c) {
-        case '{': parser->depth++; JsonValue* o = json_parse_object(parser); parser->depth--; return o;
-        case '[': parser->depth++; JsonValue* a = json_parse_array(parser);  parser->depth--; return a;
+        case '{': { parser->depth++; JsonValue* o = json_parse_object(parser); parser->depth--; return o; }
+        case '[': { parser->depth++; JsonValue* a = json_parse_array(parser);  parser->depth--; return a; }
         case '"': return json_parse_string(parser);
         case 't': case 'f': return json_parse_bool(parser);
         case 'n': return json_parse_null(parser);
