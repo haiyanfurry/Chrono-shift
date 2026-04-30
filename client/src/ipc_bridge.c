@@ -28,7 +28,7 @@ int ipc_bridge_init(IpcCallback callback, void* user_data)
     return 0;
 }
 
-int ipc_send_to_js(const char* webview, const char* json_str)
+int ipc_send_to_js(void* webview, const char* json_str)
 {
     (void)webview;
     (void)json_str;

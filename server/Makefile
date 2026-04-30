@@ -1,8 +1,7 @@
 # ============================================================
 # Chrono-shift Server — 独立 Makefile
 # 支持: Linux + Windows (MinGW)
-# TLS:   make HAS_TLS=1  启用 OpenSSL (需要安装开发库)
-#        make            默认使用 TLS 桩 (无需 OpenSSL)
+# TLS:  强制启用 OpenSSL (需要安装 libssl-dev / MSYS2 mingw-w64)
 # ============================================================
 
 .PHONY: all rust build clean run debug-cli
@@ -28,20 +27,14 @@ SRCDIR   := src
 INCDIR   := include
 BUILDDIR := out
 
-# 从通配符中排除 tls_*.c，按条件编译其中一个
-SRCS     := $(filter-out $(SRCDIR)/tls_stub.c $(SRCDIR)/tls_server.c, $(wildcard $(SRCDIR)/*.c))
+# tls_stub.c 已删除 (TLS 为强制，不再需要桩实现)
+SRCS     := $(filter-out $(SRCDIR)/tls_stub.c, $(wildcard $(SRCDIR)/*.c))
 
-# ---- TLS 支持 ----
-# 设置 HAS_TLS=1 启用 OpenSSL 加密 (需安装 libssl-dev)
-# 默认使用无加密的 TLS 桩实现
-ifdef HAS_TLS
-    CFLAGS += -DHAS_TLS
-    SRCS   += $(SRCDIR)/tls_server.c
-    $(info [TLS]  启用 OpenSSL 加密支持)
-else
-    SRCS   += $(SRCDIR)/tls_stub.c
-    $(info [TLS]  使用 TLS 桩实现 (无加密, make HAS_TLS=1 启用))
-endif
+# ---- TLS 支持 (强制启用) ----
+# OpenSSL 是必需依赖，HTTPS-only 模式
+# tls_server.c 已包含在通配符中 (因 tls_stub.c 被排除)
+CFLAGS += -DHAS_TLS
+$(info [TLS]  强制启用 OpenSSL 加密 (HTTPS only))
 
 OBJS     := $(patsubst $(SRCDIR)/%.c,$(BUILDDIR)/%.o,$(SRCS))
 TARGET   := $(BUILDDIR)/chrono-server
@@ -58,15 +51,13 @@ else
     RUST_LIB := security/target/release/chrono_server_security.lib
 endif
 
-# TLS 链接库 (仅在启用时添加)
-ifdef HAS_TLS
-    # MinGW 需要手动指定 MSYS2 OpenSSL 路径
-    ifdef IS_WINDOWS
-        CFLAGS  += -ID:/mys32/mingw64/include
-        LDFLAGS += -LD:/mys32/mingw64/lib -lssl -lcrypto
-    else
-        LDFLAGS += -lssl -lcrypto
-    endif
+# TLS 链接库 (强制链接 OpenSSL)
+# MinGW 需要手动指定 MSYS2 OpenSSL 路径
+ifdef IS_WINDOWS
+    CFLAGS  += -ID:/mys32/mingw64/include
+    LDFLAGS += -LD:/mys32/mingw64/lib -lssl -lcrypto
+else
+    LDFLAGS += -lssl -lcrypto
 endif
 
 # 如果 Rust 安全库存在，链接它
@@ -92,7 +83,7 @@ endif
 rust:
 	cd security && cargo build --release
 
-# 编译 C 代码
+# 编译 C 代码 (TLS 强制启用, OpenSSL 必需)
 build: $(BUILDDIR) $(OBJS)
 	$(CC) $(OBJS) -o $(TARGET) $(LDFLAGS)
 	@echo "=== Build complete: $(TARGET) ==="
@@ -114,23 +105,26 @@ else
 	cd security && cargo clean 2>/dev/null || true
 endif
 
-# ---- CLI 调试工具 ----
+# ---- CLI 调试工具 (需要 OpenSSL + JSON 解析器) ----
 TOOLDIR       := tools
 DEBUG_CLI_SRC := $(TOOLDIR)/debug_cli.c
 DEBUG_CLI     := $(BUILDDIR)/debug_cli
 
-# 编译调试 CLI
+# 编译调试 CLI (需要 TLS + JSON 解析器)
+DEBUG_CLI_DEPS := $(SRCDIR)/json_parser.c $(SRCDIR)/tls_server.c
 debug-cli: $(BUILDDIR)
-	$(CC) $(CFLAGS) $(DEBUG_CLI_SRC) -o $(DEBUG_CLI) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(DEBUG_CLI_SRC) $(DEBUG_CLI_DEPS) -o $(DEBUG_CLI) $(LDFLAGS)
 	@echo "=== Debug CLI build complete: $(DEBUG_CLI) ==="
 
-# ---- 压力测试工具 ----
+# ---- 压力测试工具 (需要 TLS + OpenSSL) ----
 STRESS_TEST_SRC := $(TOOLDIR)/stress_test.c
 STRESS_TEST     := $(BUILDDIR)/stress_test
 
-# 编译压力测试
+# 编译压力测试 (需要 tls_server.c 提供客户端 TLS API)
+# tls_server.c 同时提供 tls_client_init/connect 等客户端函数
+STRESS_TEST_DEPS := $(SRCDIR)/tls_server.c
 stress-test: $(BUILDDIR)
-	$(CC) $(CFLAGS) $(STRESS_TEST_SRC) -o $(STRESS_TEST) $(LDFLAGS)
+	$(CC) $(CFLAGS) $(STRESS_TEST_SRC) $(STRESS_TEST_DEPS) -o $(STRESS_TEST) $(LDFLAGS)
 	@echo "=== Stress test build complete: $(STRESS_TEST) ==="
 
 # 仅清理构建产物

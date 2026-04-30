@@ -63,4 +63,8 @@ void log_write(int level, const char* file, int line, const char* fmt, ...);
 #define LOG_WARN(fmt, ...)  log_write(LOG_WARN,  __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 #define LOG_ERROR(fmt, ...) log_write(LOG_ERROR, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 
+/* ---- 安全工具函数 ---- */
+char* json_escape_string(const char* input);
+int   validate_input_safe(const char* input, size_t max_len);
+
 #endif /* CHRONO_SERVER_H */

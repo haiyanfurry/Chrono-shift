@@ -8,7 +8,7 @@
 const API = window.API || {};
 
 // === 基础配置 ===
-API.BASE_URL = 'http://127.0.0.1:8080';
+API.BASE_URL = 'https://127.0.0.1:4443';
 API.TOKEN = null;
 
 // === HTTP 请求 ===

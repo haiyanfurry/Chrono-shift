@@ -45,3 +45,9 @@ pub fn get_server_public_key() -> Option<String> {
     let store = KEY_STORE.get()?;
     Some(BASE64.encode(&store.server_key))
 }
+
+/// 获取 JWT 签名密钥（原始 32 字节）
+pub fn get_jwt_secret() -> Option<[u8; 32]> {
+    let store = KEY_STORE.get()?;
+    Some(store.server_key)
+}

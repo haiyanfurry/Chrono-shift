@@ -25,6 +25,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#include <openssl/x509v3.h>
 
 /* ============================================================
  * 全局状态
@@ -420,6 +421,172 @@ void tls_client_cleanup(void)
         SSL_CTX_free(g_client_ctx);
         g_client_ctx = NULL;
     }
+}
+
+/* ============================================================
+ * 自动证书生成
+ * ============================================================ */
+
+/**
+ * 使用 OpenSSL API 生成自签名 RSA 2048 证书
+ */
+static int generate_self_signed_cert(const char* cert_path, const char* key_path)
+{
+    /* 确保目录存在 */
+    char dir[512];
+    strncpy(dir, cert_path, sizeof(dir) - 1);
+    dir[sizeof(dir) - 1] = '\0';
+    char* last_slash = strrchr(dir, '/');
+    if (!last_slash) last_slash = strrchr(dir, '\\');
+    if (last_slash) {
+        *last_slash = '\0';
+#ifdef PLATFORM_WINDOWS
+        char mkdir_cmd[1024];
+        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "if not exist \"%s\" mkdir \"%s\"", dir, dir);
+        system(mkdir_cmd);
+#else
+        char mkdir_cmd[1024];
+        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p \"%s\"", dir);
+        system(mkdir_cmd);
+#endif
+    }
+
+    /* 生成 RSA 私钥 */
+    EVP_PKEY* pkey = EVP_PKEY_new();
+    if (!pkey) {
+        set_error_openssl("EVP_PKEY_new 失败");
+        return -1;
+    }
+
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
+    if (!ctx) {
+        set_error_openssl("EVP_PKEY_CTX_new 失败");
+        EVP_PKEY_free(pkey);
+        return -1;
+    }
+
+    if (EVP_PKEY_keygen_init(ctx) <= 0 ||
+        EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, 2048) <= 0 ||
+        EVP_PKEY_keygen(ctx, &pkey) <= 0) {
+        set_error_openssl("RSA 密钥生成失败");
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(pkey);
+        return -1;
+    }
+    EVP_PKEY_CTX_free(ctx);
+
+    /* 创建 X509 证书 */
+    X509* x509 = X509_new();
+    if (!x509) {
+        set_error_openssl("X509_new 失败");
+        EVP_PKEY_free(pkey);
+        return -1;
+    }
+
+    /* 设置序列号 */
+    ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
+
+    /* 设置有效期: 现在 ~ 10年后 */
+    X509_gmtime_adj(X509_get_notBefore(x509), 0);
+    X509_gmtime_adj(X509_get_notAfter(x509), 365 * 24 * 3600 * 10L);
+
+    /* 设置公钥 */
+    X509_set_pubkey(x509, pkey);
+
+    /* 设置主题名称 (自签名: issuer = subject) */
+    X509_NAME* name = X509_get_subject_name(x509);
+    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC,
+                               (unsigned char*)"127.0.0.1", -1, -1, 0);
+    X509_NAME_add_entry_by_txt(name, "O", MBSTRING_ASC,
+                               (unsigned char*)"Chrono-shift Self-Signed", -1, -1, 0);
+    X509_set_issuer_name(x509, name);
+
+    /* 添加 SAN (Subject Alternative Name): IP:127.0.0.1 */
+    GENERAL_NAMES* sans = sk_GENERAL_NAME_new_null();
+    if (sans) {
+        GENERAL_NAME* san_ip = GENERAL_NAME_new();
+        if (san_ip) {
+            ASN1_OCTET_STRING* ip_octet = ASN1_OCTET_STRING_new();
+            if (ip_octet) {
+                unsigned char ip_bytes[4] = {127, 0, 0, 1};
+                ASN1_OCTET_STRING_set(ip_octet, ip_bytes, 4);
+                GENERAL_NAME_set0_value(san_ip, GEN_IPADD, ip_octet);
+                sk_GENERAL_NAME_push(sans, san_ip);
+            }
+        }
+        X509_add1_ext_i2d(x509, NID_subject_alt_name, sans, 0, 0);
+        sk_GENERAL_NAME_pop_free(sans, GENERAL_NAME_free);
+    }
+
+    /* 自签名 */
+    if (!X509_sign(x509, pkey, EVP_sha256())) {
+        set_error_openssl("X509_sign 失败");
+        X509_free(x509);
+        EVP_PKEY_free(pkey);
+        return -1;
+    }
+
+    /* 保存私钥到 PEM 文件 */
+    FILE* key_file = fopen(key_path, "wb");
+    if (!key_file) {
+        set_error("无法写入私钥文件");
+        X509_free(x509);
+        EVP_PKEY_free(pkey);
+        return -1;
+    }
+    PEM_write_PrivateKey(key_file, pkey, NULL, NULL, 0, NULL, NULL);
+    fclose(key_file);
+
+    /* 保存证书到 PEM 文件 */
+    FILE* cert_file = fopen(cert_path, "wb");
+    if (!cert_file) {
+        set_error("无法写入证书文件");
+        X509_free(x509);
+        EVP_PKEY_free(pkey);
+        fclose(key_file);
+        return -1;
+    }
+    PEM_write_X509(cert_file, x509);
+    fclose(cert_file);
+
+    printf("[TLS] 自签名证书已生成: cert=%s, key=%s\n", cert_path, key_path);
+
+    X509_free(x509);
+    EVP_PKEY_free(pkey);
+    return 0;
+}
+
+int tls_server_auto_init(const char* cert_dir)
+{
+    char cert_path[1024];
+    char key_path[1024];
+
+    snprintf(cert_path, sizeof(cert_path), "%s/server.crt", cert_dir);
+    snprintf(key_path, sizeof(key_path), "%s/server.key", cert_dir);
+
+    /* 检查证书文件是否存在 */
+    FILE* f_cert = fopen(cert_path, "r");
+    FILE* f_key  = fopen(key_path, "r");
+
+    if (f_cert && f_key) {
+        fclose(f_cert);
+        fclose(f_key);
+        printf("[TLS] 检测到现有证书: %s, %s\n", cert_path, key_path);
+        return tls_server_init(cert_path, key_path);
+    }
+
+    if (f_cert) fclose(f_cert);
+    if (f_key) fclose(f_key);
+
+    /* 证书不存在，自动生成 */
+    printf("[TLS] 未找到现有证书，正在生成自签名证书...\n");
+
+    if (generate_self_signed_cert(cert_path, key_path) != 0) {
+        fprintf(stderr, "[TLS] 自签名证书生成失败: %s\n", tls_last_error());
+        return -1;
+    }
+
+    return tls_server_init(cert_path, key_path);
 }
 
 #endif /* HAS_TLS */

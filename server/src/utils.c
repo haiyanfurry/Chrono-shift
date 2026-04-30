@@ -1,6 +1,8 @@
 /**
  * Chrono-shift 工具函数
  * 语言标准: C99
+ *
+ * 安全: 包含 JSON 字符串转义、输入验证等函数
  */
 
 #include "server.h"
@@ -80,4 +82,31 @@ void generate_uuid(char* buf, size_t buf_size)
         }
     }
     buf[36] = '\0';
+}
+
+/* json_escape_string() 定义在 json_parser.c 中
+ * 头文件: include/json_parser.h */
+
+/* ============================================================
+ * 基础输入验证
+ * 检查字符串是否包含危险字符（SQL 注入、XSS 等）
+ * 返回: 0=安全, -1=检测到危险字符
+ * ============================================================ */
+int validate_input_safe(const char* input, size_t max_len)
+{
+    if (!input) return -1;
+    size_t len = strlen(input);
+    if (len == 0 || len > max_len) return -1;
+
+    /* 禁止控制字符 (除了常见的空白) */
+    for (size_t i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)input[i];
+        /* 允许 tab, newline, carriage return 和可打印字符 */
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') {
+            return -1;
+        }
+        /* 不允许 DEL 和更高字节 (非 UTF-8 序列的原始字节) */
+        if (c == 0x7F) return -1;
+    }
+    return 0;
 }

@@ -13,6 +13,7 @@
 
 #include "websocket.h"
 #include "server.h"
+#include "json_parser.h"
 
 /* ============================================================
  * 常量
@@ -354,7 +355,7 @@ int ws_handle_upgrade(const HttpRequest* req, HttpResponse* resp,
     if (!upgrade || strcasecmp(upgrade, "websocket") != 0 ||
         !ws_key || !ws_version || atoi(ws_version) < 13) {
         http_response_set_status(resp, 400, "Bad Request");
-        http_response_set_json(resp, "{\"status\":\"error\",\"message\":\"Invalid WebSocket upgrade\"}");
+        http_response_set_json(resp, json_build_error("Invalid WebSocket upgrade"));
         return -1;
     }
 

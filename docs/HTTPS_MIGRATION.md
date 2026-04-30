@@ -1,9 +1,12 @@
 # HTTPS 迁移技术指南
 
-> **文档版本**: 2.0.0
+> **⚠️ 归档通知**: v0.2.0 起 TLS/HTTPS 已为强制要求，纯 HTTP 明文模式已完全移除。
+> 本文档保留作为历史参考，不再需要执行"迁移"操作。服务器默认使用 HTTPS-only 模式。
+>
+> **文档版本**: 2.0.0 (已归档)
 > **适用项目**: Chrono-shift (墨竹)
 > **目标**: 将 HTTP 明文通信迁移至 TLS 加密通信，消除中间人攻击 (MITM) 途径
-> **状态**: ✅ TLS/HTTPS 支持已内置实现，详见第 2.4 节
+> **状态**: ✅ **已完成** — TLS/HTTPS 已为强制，详见 `README.md` 或 `docs/BUILD.md`
 > **占位符说明**: 本文档使用 `example.com` 作为域名、`192.0.2.1` 作为服务器 IP，操作时请替换为实际值
 
 ---
@@ -659,11 +662,8 @@ SSL_CTX_set_max_proto_version(ctx, TLS1_3_VERSION);
 #### CLI 用法
 
 ```bash
-# HTTP 模式（默认，不需 OpenSSL）
-./build/chrono-server --port 8080
-
-# HTTPS 模式
-./build/chrono-server --port 8080 \
+# 启动服务器（TLS 必需）
+./build/chrono-server --port 4443 \
   --tls-cert /etc/letsencrypt/live/example.com/fullchain.pem \
   --tls-key  /etc/letsencrypt/live/example.com/privkey.pem
 ```

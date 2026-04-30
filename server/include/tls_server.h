@@ -51,6 +51,13 @@ SSL* tls_server_wrap(int fd);
 void tls_close(SSL* ssl);
 
 /**
+ * 自动初始化 TLS（检查现有证书，或自动生成自签名证书）
+ * @param cert_dir 证书存储目录 (如 "./certs")
+ * @return 0=成功, -1=失败
+ */
+int tls_server_auto_init(const char* cert_dir);
+
+/**
  * 清理全局服务端 TLS 上下文
  */
 void tls_server_cleanup(void);

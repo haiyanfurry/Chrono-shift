@@ -10,6 +10,7 @@
 #include "http_server.h"
 #include "platform_compat.h"
 #include "tls_server.h"
+#include "json_parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -406,29 +407,22 @@ static int handle_accept(void)
         setsockopt(client_fd, IPPROTO_TCP, TCP_NODELAY,
                    (const char*)&opt, sizeof(opt));
 
-        /* TLS 握手需要在阻塞模式下进行, 之后再设为非阻塞 */
-        if (!tls_server_is_enabled()) {
-            set_nonblocking(client_fd);
-        }
-
+        /* TLS 强制: 所有连接必须通过 TLS 握手 (阻塞模式), 之后再设为非阻塞 */
         Connection* conn = conn_new(client_fd);
         if (!conn) {
             close_socket(client_fd);
             continue;
         }
 
-        /* 如果 TLS 已启用, 将连接包装为 TLS (阻塞模式完成握手) */
-        if (tls_server_is_enabled()) {
-            SSL* ssl = tls_server_wrap(client_fd);
-            if (!ssl) {
-                fprintf(stderr, "[TLS] 包装新连接失败, 拒绝连接\n");
-                conn_close(conn);
-                continue;
-            }
-            conn->ssl = (void*)ssl;
-            /* TLS 握手完成后再设为非阻塞 */
-            set_nonblocking(client_fd);
+        SSL* ssl = tls_server_wrap(client_fd);
+        if (!ssl) {
+            fprintf(stderr, "[TLS] 包装新连接失败, 拒绝连接 (HTTPS only)\n");
+            conn_close(conn);
+            continue;
         }
+        conn->ssl = (void*)ssl;
+        /* TLS 握手完成后再设为非阻塞 */
+        set_nonblocking(client_fd);
 
 #ifdef PLATFORM_LINUX
         struct epoll_event ev;
@@ -457,17 +451,10 @@ static int handle_conn_read(Connection* conn)
         if (conn->read_offset >= MAX_BUFFER_SIZE - 1) return -1;
 
         ssize_t n;
-        if (conn->ssl) {
-            /* TLS 加密读取 */
-            n = tls_read((SSL*)conn->ssl,
-                         (char*)(conn->read_buf + conn->read_offset),
-                         (int)(MAX_BUFFER_SIZE - conn->read_offset - 1));
-        } else {
-            /* 纯文本读取 */
-            n = recv(conn->fd,
+        /* TLS 加密读取 (HTTPS only) */
+        n = tls_read((SSL*)conn->ssl,
                      (char*)(conn->read_buf + conn->read_offset),
-                     MAX_BUFFER_SIZE - conn->read_offset - 1, 0);
-        }
+                     (int)(MAX_BUFFER_SIZE - conn->read_offset - 1));
 
         if (n > 0) {
             conn->read_offset += (size_t)n;
@@ -498,7 +485,7 @@ static int handle_conn_read(Connection* conn)
                 route->handler(&conn->request, &conn->response, route->user_data);
             } else {
                 http_response_set_status(&conn->response, 404, "Not Found");
-                http_response_set_json(&conn->response, "{\"status\":\"error\",\"message\":\"Not Found\"}");
+                http_response_set_json(&conn->response, json_build_error("Not Found"));
             }
 
             build_http_response(conn);
@@ -527,17 +514,10 @@ static int handle_conn_write(Connection* conn)
 
     while (conn->write_offset < conn->write_total) {
         ssize_t n;
-        if (conn->ssl) {
-            /* TLS 加密写入 */
-            n = tls_write((SSL*)conn->ssl,
-                          (const char*)(conn->write_buf + conn->write_offset),
-                          (int)(conn->write_total - conn->write_offset));
-        } else {
-            /* 纯文本写入 */
-            n = send(conn->fd,
-                     (const char*)(conn->write_buf + conn->write_offset),
-                     conn->write_total - conn->write_offset, 0);
-        }
+        /* TLS 加密写入 (HTTPS only) */
+        n = tls_write((SSL*)conn->ssl,
+                      (const char*)(conn->write_buf + conn->write_offset),
+                      (int)(conn->write_total - conn->write_offset));
         if (n > 0) {
             conn->write_offset += (size_t)n;
             continue;
@@ -680,6 +660,17 @@ static int build_http_response(Connection* conn)
                     "Content-Length: %zu\r\n", resp->body_length);
     off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
                     "Connection: keep-alive\r\n");
+    /* ---- 安全响应头 ---- */
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                    "Strict-Transport-Security: max-age=31536000; includeSubDomains\r\n");
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                    "X-Content-Type-Options: nosniff\r\n");
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                    "X-Frame-Options: DENY\r\n");
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                    "Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'\r\n");
+    off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off,
+                    "Referrer-Policy: no-referrer\r\n");
     off += (size_t)snprintf(buf + off, MAX_BUFFER_SIZE - off, "\r\n");
 
     if (resp->body && resp->body_length > 0) {
@@ -725,7 +716,7 @@ static Connection* conn_new(socket_t fd)
     if (!c) return NULL;
     c->fd = fd;
     c->state = CONN_READING;
-    c->ssl = NULL;                 /* 默认纯文本 */
+    c->ssl = NULL;                 /* 将由 TLS 包装设置 */
     c->last_activity_ms = now_ms();
     return c;
 }
@@ -889,7 +880,7 @@ void http_response_set_file(HttpResponse* resp, const char* filepath, const char
     FILE* fp = fopen(filepath, "rb");
     if (!fp) {
         http_response_set_status(resp, 404, "Not Found");
-        http_response_set_json(resp, "{\"status\":\"error\",\"message\":\"File not found\"}");
+        http_response_set_json(resp, json_build_error("File not found"));
         return;
     }
     fseek(fp, 0, SEEK_END);
@@ -898,14 +889,14 @@ void http_response_set_file(HttpResponse* resp, const char* filepath, const char
     if (fsize <= 0) {
         fclose(fp);
         http_response_set_status(resp, 500, "Internal Server Error");
-        http_response_set_json(resp, "{\"status\":\"error\",\"message\":\"Empty file\"}");
+        http_response_set_json(resp, json_build_error("Empty file"));
         return;
     }
     uint8_t* buf = (uint8_t*)malloc((size_t)fsize);
     if (!buf) {
         fclose(fp);
         http_response_set_status(resp, 500, "Internal Server Error");
-        http_response_set_json(resp, "{\"status\":\"error\",\"message\":\"Memory allocation failed\"}");
+        http_response_set_json(resp, json_build_error("Memory allocation failed"));
         return;
     }
     size_t nread = fread(buf, 1, (size_t)fsize, fp);

@@ -154,15 +154,28 @@ static char* build_user_json(int64_t user_id, const char* username,
                               const char* password_hash, const char* nickname,
                               const char* avatar_url, int64_t created_at)
 {
-    /* 构建 JSON: {"id":...,"username":"...","password_hash":"...","nickname":"...","avatar_url":"...","created_at":...} */
-    size_t len = 512;
-    if (username) len += strlen(username);
-    if (password_hash) len += strlen(password_hash);
-    if (nickname) len += strlen(nickname);
-    if (avatar_url) len += strlen(avatar_url);
+    /* 先转义各字符串字段, 防止 JSON 注入 */
+    char* safe_username     = json_escape_string(username     ? username     : "");
+    char* safe_password_hash = json_escape_string(password_hash ? password_hash : "");
+    char* safe_nickname     = json_escape_string(nickname     ? nickname     : "");
+    char* safe_avatar_url   = json_escape_string(avatar_url   ? avatar_url   : "");
+
+    if (!safe_username || !safe_password_hash || !safe_nickname || !safe_avatar_url) {
+        free(safe_username); free(safe_password_hash);
+        free(safe_nickname); free(safe_avatar_url);
+        return NULL;
+    }
+
+    /* 计算所需缓冲区大小 */
+    size_t len = 128 + strlen(safe_username) + strlen(safe_password_hash)
+                 + strlen(safe_nickname) + strlen(safe_avatar_url);
 
     char* json = (char*)malloc(len);
-    if (!json) return NULL;
+    if (!json) {
+        free(safe_username); free(safe_password_hash);
+        free(safe_nickname); free(safe_avatar_url);
+        return NULL;
+    }
 
     snprintf(json, len,
              "{"
@@ -174,11 +187,14 @@ static char* build_user_json(int64_t user_id, const char* username,
              "\"created_at\":%lld"
              "}",
              (long long)user_id,
-             username ? username : "",
-             password_hash ? password_hash : "",
-             nickname ? nickname : "",
-             avatar_url ? avatar_url : "",
+             safe_username,
+             safe_password_hash,
+             safe_nickname,
+             safe_avatar_url,
              (long long)created_at);
+
+    free(safe_username); free(safe_password_hash);
+    free(safe_nickname); free(safe_avatar_url);
 
     return json;
 }

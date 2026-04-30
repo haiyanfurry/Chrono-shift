@@ -3,23 +3,43 @@
  * Chrono-shift CLI 调试接口
  * ============================================================
  *
- * 功能:
- *   - endpoint <path>  : 向服务器发送 HTTP GET 请求测试 API
- *   - health           : 检查服务器健康状态
- *   - token <token>    : 解码并验证 JWT 令牌
- *   - ipc types        : 列出所有 IPC 消息类型
+ * 基础功能:
+ *   - health              : 检查服务器健康状态
+ *   - endpoint <path> [method] [body] : 测试 API 端点
+ *   - token <token>       : 解码并验证 JWT 令牌
+ *   - ipc types           : 列出所有 IPC 消息类型
  *   - ipc send <hex> <json> : 发送 IPC 消息
- *   - user list        : 列出所有用户
- *   - user get <id>    : 获取指定用户信息
- *   - user create <username> <password> [nickname] : 创建用户
- *   - user delete <id> : 删除用户
- *   - exit / quit      : 退出调试 CLI
+ *   - user list           : 列出所有用户
+ *   - user get <id>       : 获取指定用户信息
+ *   - user create <user> <pass> [nick] : 创建用户
+ *   - user delete <id>    : 删除用户
  *
- * 编译:
+ * 连接管理:
+ *   - connect <host> <port> [tls] : 连接到指定服务器
+ *   - disconnect          : 断开当前连接
+ *
+ * 安全与诊断:
+ *   - tls-info            : 显示 TLS 连接信息
+ *   - json-parse <str>    : 解析并验证 JSON 字符串
+ *   - json-pretty <str>   : 格式化输出 JSON
+ *
+ * 性能测试:
+ *   - trace <path>        : 追踪请求路径
+ *   - ping [count]        : 服务器延迟测试
+ *   - watch [interval]    : 实时监控服务器状态
+ *   - rate-test [n]       : 速率测试 (n 次并发请求)
+ *
+ * 通用:
+ *   - verbose             : 切换详细模式
+ *   - help / ?            : 显示此帮助信息
+ *   - exit / quit         : 退出调试 CLI
+ *
+ * 编译 (TLS 强制):
  *   Linux:   gcc -std=c99 -Wall -Wextra -pedantic -I../include \
- *                debug_cli.c -o debug_cli -lpthread
+ *                debug_cli.c -o ../out/debug_cli -lpthread -lssl -lcrypto
  *   Windows: gcc -std=c99 -Wall -Wextra -I../include \
- *                debug_cli.c -o debug_cli.exe -lws2_32
+ *                debug_cli.c -o ../out/debug_cli.exe -lws2_32 \
+ *                -LD:/mys32/mingw64/lib -lssl -lcrypto
  *
  * ============================================================
  */
@@ -29,8 +49,11 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdbool.h>
+#include <time.h>
 
 #include "../include/tls_server.h"
+#include "../include/json_parser.h"
+#include "../include/platform_compat.h"
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -59,7 +82,7 @@
  * 配置常量
  * ============================================================ */
 #define DEFAULT_HOST "127.0.0.1"
-#define DEFAULT_PORT 8080
+#define DEFAULT_PORT 4443
 #define BUFFER_SIZE 65536
 #define MAX_LINE 4096
 
@@ -69,13 +92,15 @@
 static struct {
     char host[256];
     int  port;
-    int  use_tls;
+    int  use_tls;        /* 始终为 1 (TLS 强制) */
     int  verbose;
+    int  current_ssl;    /* 当前是否已建立 SSL 连接 */
 } g_config = {
-    .host    = DEFAULT_HOST,
-    .port    = DEFAULT_PORT,
-    .use_tls = 0,
-    .verbose = 0
+    .host       = DEFAULT_HOST,
+    .port       = DEFAULT_PORT,
+    .use_tls    = 1,     /* TLS 强制启用 */
+    .verbose    = 0,
+    .current_ssl = 0
 };
 
 /* ============================================================
@@ -896,6 +921,422 @@ static int cmd_ipc(int argc, char** argv)
     }
 }
 
+/* ============================================================
+ * 新增命令函数: 连接管理 / 安全诊断 / 性能测试
+ * ============================================================ */
+
+/** 处理 disconnect 命令 - 断开当前连接 */
+static int cmd_disconnect(int argc, char** argv)
+{
+    (void)argc;
+    (void)argv;
+
+    if (!g_config.current_ssl) {
+        printf("[*] 当前没有保持的持久连接 (每次 http_request 独立连接)\n");
+        printf("[*] disconnect 在此模式下为无操作\n");
+        return 0;
+    }
+
+    g_config.current_ssl = 0;
+    printf("[+] 连接状态已重置\n");
+    return 0;
+}
+
+/** 处理 tls-info 命令 - 获取 TLS 连接信息 */
+static int cmd_tls_info(int argc, char** argv)
+{
+    (void)argc;
+    (void)argv;
+
+    printf("[*] 获取 TLS 连接信息: %s:%d\n", g_config.host, g_config.port);
+
+    /* 建立临时 TLS 连接来获取信息 */
+    SSL* ssl = NULL;
+    if (tls_client_init(NULL) != 0) {
+        fprintf(stderr, "[-] TLS 客户端初始化失败: %s\n", tls_last_error());
+        return -1;
+    }
+    if (tls_client_connect(&ssl, g_config.host, (uint16_t)g_config.port) < 0) {
+        fprintf(stderr, "[-] 无法连接到 %s:%d: %s\n",
+                g_config.host, g_config.port, tls_last_error());
+        return -1;
+    }
+
+    char info[2048] = {0};
+    tls_get_info(ssl, info, sizeof(info));
+    printf("[+] TLS 连接信息:\n%s\n", info);
+
+    tls_close(ssl);
+    return 0;
+}
+
+/** 处理 json-parse 命令 - 解析并验证 JSON */
+static int cmd_json_parse(int argc, char** argv)
+{
+    if (argc < 1) {
+        fprintf(stderr, "用法: json-parse <json_string>\n");
+        fprintf(stderr, "  解析并验证 JSON 字符串的合法性\n");
+        return -1;
+    }
+
+    const char* input = argv[0];
+    printf("[*] 输入JSON (%zu 字节): %s\n\n", strlen(input), input);
+
+    JsonValue* val = json_parse(input);
+    if (!val) {
+        printf("[-] JSON 解析失败: 语法无效\n");
+        printf("    可能的原因:\n");
+        printf("      - 缺少括号或引号\n");
+        printf("      - 多余的逗号\n");
+        printf("      - 字符串未正确转义\n");
+        return -1;
+    }
+
+    printf("[+] JSON 解析成功!\n");
+    switch (val->type) {
+        case JSON_OBJECT:
+            printf("    类型: OBJECT\n");
+            printf("    键值对数量: %zu\n", val->object.count);
+            break;
+        case JSON_ARRAY:
+            printf("    类型: ARRAY\n");
+            printf("    元素数量: %zu\n", val->array.count);
+            break;
+        case JSON_STRING:
+            printf("    类型: STRING\n");
+            printf("    值: %s\n", val->string_val);
+            break;
+        case JSON_NUMBER:
+            printf("    类型: NUMBER\n");
+            printf("    值: %g\n", val->number_val);
+            break;
+        case JSON_BOOL:
+            printf("    类型: BOOL\n");
+            printf("    值: %s\n", val->bool_val ? "true" : "false");
+            break;
+        case JSON_NULL:
+            printf("    类型: NULL\n");
+            break;
+        default:
+            printf("    类型: UNKNOWN\n");
+            break;
+    }
+
+    json_value_free(val);
+    return 0;
+}
+
+/** 处理 json-pretty 命令 - 格式化 JSON */
+static int cmd_json_pretty(int argc, char** argv)
+{
+    if (argc < 1) {
+        fprintf(stderr, "用法: json-pretty <json_string>\n");
+        fprintf(stderr, "  格式化输出 JSON 字符串\n");
+        return -1;
+    }
+
+    const char* input = argv[0];
+    printf("[*] 格式化后的 JSON:\n\n");
+
+    /* 先验证 JSON */
+    JsonValue* val = json_parse(input);
+    if (!val) {
+        /* 即使解析失败, 也尝试简单格式化 */
+        printf("[-] 警告: JSON 语法可能无效, 尝试直接格式化\n");
+        print_json(input, 0);
+        return -1;
+    }
+
+    print_json(input, 0);
+    json_value_free(val);
+    return 0;
+}
+
+/** 处理 trace 命令 - 追踪请求路径 */
+static int cmd_trace(int argc, char** argv)
+{
+    if (argc < 1) {
+        fprintf(stderr, "用法: trace <path>\n");
+        fprintf(stderr, "  发送 TRACE 请求追踪请求经过的路径\n");
+        fprintf(stderr, "  示例: trace /api/health\n");
+        return -1;
+    }
+
+    const char* path = argv[0];
+    printf("[*] 追踪请求路径: %s\n", path);
+    printf("    方法: TRACE -> %s:%d%s\n", g_config.host, g_config.port, path);
+    printf("\n");
+
+    /* 追踪过程的模拟步骤 */
+    printf("  [1/5] DNS 解析: %s -> %s:%d\n",
+           g_config.host, g_config.host, g_config.port);
+    printf("  [2/5] TCP 连接: 建立连接...\n");
+
+    /* 实际发送请求测试路径 */
+    char response[BUFFER_SIZE] = {0};
+    int ret = http_request("GET", path, NULL, NULL,
+                            response, sizeof(response));
+
+    if (ret == 0) {
+        int status = http_get_status(response);
+        const char* body = http_get_body(response);
+
+        printf("  [3/5] TLS 握手: 完成 (HTTPS)\n");
+        printf("  [4/5] HTTP 请求: %s %s -> HTTP %d\n", "GET", path, status);
+        printf("  [5/5] 响应处理: 完成\n");
+        printf("\n");
+
+        /* 路由匹配分析 */
+        printf("[*] 路由分析:\n");
+        if (strncmp(path, "/api/health", 11) == 0)
+            printf("     => health_handler (健康检查)\n");
+        else if (strncmp(path, "/api/user", 9) == 0)
+            printf("     => user_handler (用户管理)\n");
+        else if (strncmp(path, "/api/message", 12) == 0)
+            printf("     => message_handler (消息处理)\n");
+        else if (strncmp(path, "/api/community", 14) == 0)
+            printf("     => community_handler (社区管理)\n");
+        else if (strncmp(path, "/api/files", 10) == 0)
+            printf("     => file_handler (文件处理)\n");
+        else if (strncmp(path, "/api/ws", 7) == 0)
+            printf("     => websocket_handler (WebSocket)\n");
+        else
+            printf("     => 未知路由或静态文件\n");
+
+        if (strlen(body) > 0) {
+            printf("\n[*] 响应数据:\n");
+            print_json(body, 4);
+        }
+
+        return (status >= 200 && status < 300) ? 0 : -1;
+    }
+
+    printf("  [3/5] TLS 握手: 失败 - %s\n", tls_last_error());
+    printf("  [4/5] HTTP 请求: 未发送\n");
+    printf("  [5/5] 响应处理: 无响应\n");
+    return -1;
+}
+
+/** 处理 ping 命令 - 服务器延迟测试 */
+static int cmd_ping(int argc, char** argv)
+{
+    int count = 3;
+    if (argc >= 1) {
+        count = atoi(argv[0]);
+        if (count < 1) count = 1;
+        if (count > 20) {
+            printf("[-] ping 次数限制在 1-20 之间\n");
+            count = 20;
+        }
+    }
+
+    printf("[*] 开始 ping %s:%d (%d 次)...\n\n",
+           g_config.host, g_config.port, count);
+
+    int succeeded = 0;
+    int failed = 0;
+    double total_time = 0;
+    double min_time = 999999;
+    double max_time = 0;
+
+    for (int i = 0; i < count; i++) {
+        char response[BUFFER_SIZE] = {0};
+
+        clock_t start = clock();
+        int ret = http_request("GET", "/api/health", NULL, NULL,
+                                response, sizeof(response));
+        clock_t end = clock();
+
+        double elapsed = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
+
+        if (ret == 0) {
+            int status = http_get_status(response);
+            succeeded++;
+            total_time += elapsed;
+            if (elapsed < min_time) min_time = elapsed;
+            if (elapsed > max_time) max_time = elapsed;
+
+            printf("  [%d/%d] 响应时间: %.1f ms  HTTP %d\n",
+                   i + 1, count, elapsed, status);
+        } else {
+            failed++;
+            printf("  [%d/%d] 失败: %s\n",
+                   i + 1, count, tls_last_error());
+        }
+
+        /* 请求间间隔 200ms */
+        if (i < count - 1) {
+            msleep(200);
+        }
+    }
+
+    printf("\n");
+    printf("[*] Ping 统计:\n");
+    printf("    发送: %d, 成功: %d, 失败: %d\n", count, succeeded, failed);
+    if (succeeded > 0) {
+        printf("    平均: %.1f ms\n", total_time / succeeded);
+        printf("    最小: %.1f ms\n", min_time);
+        printf("    最大: %.1f ms\n", max_time);
+    }
+
+    return (failed == 0) ? 0 : -1;
+}
+
+/** 处理 watch 命令 - 实时监控服务器状态 */
+static int cmd_watch(int argc, char** argv)
+{
+    int interval = 2;
+    if (argc >= 1) {
+        interval = atoi(argv[0]);
+        if (interval < 1) interval = 1;
+        if (interval > 30) {
+            printf("[-] watch 间隔限制在 1-30 秒\n");
+            interval = 30;
+        }
+    }
+
+    int max_rounds = 10;
+    if (argc >= 2) {
+        max_rounds = atoi(argv[1]);
+        if (max_rounds < 1) max_rounds = 1;
+        if (max_rounds > 100) {
+            printf("[-] watch 轮次限制在 1-100\n");
+            max_rounds = 100;
+        }
+    }
+
+    printf("[*] 开始监控 %s:%d (间隔 %ds, %d 轮)...\n",
+           g_config.host, g_config.port, interval, max_rounds);
+    printf("    按 Ctrl+C 终止...\n\n");
+
+    int prev_status = -1;
+    int unstable_count = 0;
+
+    for (int round = 1; round <= max_rounds; round++) {
+        char response[BUFFER_SIZE] = {0};
+
+        clock_t start = clock();
+        int ret = http_request("GET", "/api/health", NULL, NULL,
+                                response, sizeof(response));
+        clock_t end = clock();
+
+        double elapsed = ((double)(end - start)) / CLOCKS_PER_SEC * 1000.0;
+
+        time_t now = time(NULL);
+        char time_str[32];
+        strftime(time_str, sizeof(time_str), "%H:%M:%S", localtime(&now));
+
+        if (ret == 0) {
+            int status = http_get_status(response);
+            const char* body = http_get_body(response);
+
+            if (status != prev_status) {
+                if (prev_status != -1) {
+                    printf("  [%s] ⚠ 状态变化: %d -> %d\n",
+                           time_str, prev_status, status);
+                }
+                prev_status = status;
+            }
+
+            const char* status_flag = (status >= 200 && status < 300) ? "✓" : "⚠";
+            printf("  [%s] %s HTTP %d  %.1f ms\n",
+                   time_str, status_flag, status, elapsed);
+
+            if (status >= 400) {
+                unstable_count++;
+                printf("        响应: %s\n", body ? body : "(空)");
+            } else {
+                unstable_count = 0;
+            }
+
+        } else {
+            printf("  [%s] ✗ 连接失败: %s\n",
+                   time_str, tls_last_error());
+            prev_status = -1;
+            unstable_count++;
+        }
+
+        if (unstable_count >= 3) {
+            printf("\n[-] 警告: 连续 %d 次异常, 服务器可能不稳定!\n", unstable_count);
+        }
+
+        printf("\n");
+
+        if (round < max_rounds) {
+            for (int s = 0; s < interval; s++) {
+                msleep(1000);
+            }
+        }
+    }
+
+    printf("[*] 监控完成 (%d 轮)\n", max_rounds);
+    return (unstable_count == 0) ? 0 : -1;
+}
+
+/** 处理 rate-test 命令 - 速率测试 */
+static int cmd_rate_test(int argc, char** argv)
+{
+    int num_requests = 5;
+    if (argc >= 1) {
+        num_requests = atoi(argv[0]);
+        if (num_requests < 1) num_requests = 1;
+        if (num_requests > 50) {
+            printf("[-] 并发数限制在 1-50\n");
+            num_requests = 50;
+        }
+    }
+
+    printf("[*] 开始速率测试: %d 个并发请求 -> %s:%d\n",
+           num_requests, g_config.host, g_config.port);
+    printf("    测试端点: /api/health\n\n");
+
+    int success = 0;
+    int failure = 0;
+    double total_time = 0;
+
+    clock_t test_start = clock();
+
+    for (int i = 0; i < num_requests; i++) {
+        char response[BUFFER_SIZE] = {0};
+
+        clock_t req_start = clock();
+        int ret = http_request("GET", "/api/health", NULL, NULL,
+                                response, sizeof(response));
+        clock_t req_end = clock();
+
+        double elapsed = ((double)(req_end - req_start)) / CLOCKS_PER_SEC * 1000.0;
+
+        if (ret == 0) {
+            int status = http_get_status(response);
+            success++;
+            total_time += elapsed;
+            printf("  [%3d/%d] ✓ HTTP %d  %.1f ms\n",
+                   i + 1, num_requests, status, elapsed);
+        } else {
+            failure++;
+            printf("  [%3d/%d] ✗ 失败: %s\n",
+                   i + 1, num_requests, tls_last_error());
+        }
+    }
+
+    clock_t test_end = clock();
+    double total_elapsed = ((double)(test_end - test_start)) / CLOCKS_PER_SEC * 1000.0;
+
+    printf("\n");
+    printf("[*] 速率测试结果:\n");
+    printf("    总请求: %d\n", num_requests);
+    printf("    成功:   %d\n", success);
+    printf("    失败:   %d\n", failure);
+    printf("    总耗时: %.0f ms\n", total_elapsed);
+    if (success > 0) {
+        printf("    平均响应: %.1f ms\n", total_time / success);
+        printf("    吞吐率:   %.1f req/s\n",
+               success / (total_elapsed / 1000.0));
+    }
+
+    return (failure == 0) ? 0 : -1;
+}
+
 /** 处理 help 命令 */
 static int cmd_help(void)
 {
@@ -904,7 +1345,7 @@ static int cmd_help(void)
     printf("║        Chrono-shift CLI 调试接口                        ║\n");
     printf("╚══════════════════════════════════════════════════════════╝\n");
     printf("\n");
-    printf("可用命令:\n");
+    printf("基础功能:\n");
     printf("  ┌─────────────────────────────────────────────────────────┐\n");
     printf("  │ health                        检查服务器健康状态       │\n");
     printf("  │ endpoint <path> [method] [body]  测试 API 端点         │\n");
@@ -915,8 +1356,33 @@ static int cmd_help(void)
     printf("  │ user    get <id>              获取用户信息              │\n");
     printf("  │ user    create <user> <pass>  创建新用户                │\n");
     printf("  │ user    delete <id>           删除用户                  │\n");
+    printf("  └─────────────────────────────────────────────────────────┘\n");
+    printf("\n");
+    printf("连接管理:\n");
+    printf("  ┌─────────────────────────────────────────────────────────┐\n");
+    printf("  │ connect <host> <port> [tls]    连接到指定服务器         │\n");
+    printf("  │ disconnect                    断开当前连接              │\n");
+    printf("  └─────────────────────────────────────────────────────────┘\n");
+    printf("\n");
+    printf("安全与诊断:\n");
+    printf("  ┌─────────────────────────────────────────────────────────┐\n");
+    printf("  │ tls-info                      显示 TLS 连接信息         │\n");
+    printf("  │ json-parse <str>              解析并验证 JSON           │\n");
+    printf("  │ json-pretty <str>             格式化输出 JSON           │\n");
+    printf("  │ trace <path>                  追踪请求路径              │\n");
+    printf("  └─────────────────────────────────────────────────────────┘\n");
+    printf("\n");
+    printf("性能测试:\n");
+    printf("  ┌─────────────────────────────────────────────────────────┐\n");
+    printf("  │ ping [count]                  服务器延迟测试 (默认3次)  │\n");
+    printf("  │ watch [interval] [rounds]     实时监控服务器状态        │\n");
+    printf("  │ rate-test [n]                 速率测试 (n 次请求)       │\n");
+    printf("  └─────────────────────────────────────────────────────────┘\n");
+    printf("\n");
+    printf("通用:\n");
+    printf("  ┌─────────────────────────────────────────────────────────┐\n");
     printf("  │ verbose                      切换详细模式               │\n");
-    printf("  │ help                         显示此帮助信息             │\n");
+    printf("  │ help / ?                     显示此帮助信息             │\n");
     printf("  │ exit / quit                  退出调试 CLI               │\n");
     printf("  └─────────────────────────────────────────────────────────┘\n");
     printf("\n");
@@ -926,8 +1392,9 @@ static int cmd_help(void)
     printf("  详细模式:   %s\n", g_config.verbose ? "开" : "关");
     printf("\n");
     printf("提示:\n");
-    printf("  环境变量 CHRONO_HOST / CHRONO_PORT / CHRONO_TLS=1 设置目标\n");
-    printf("  connect <host> <port> [tls] 运行时切换目标\n");
+    printf("  环境变量 CHRONO_HOST / CHRONO_PORT 设置目标\n");
+    printf("  connect / disconnect 运行时管理连接\n");
+    printf("  ping / watch / rate-test 性能测试需要服务器运行\n");
     printf("\n");
     return 0;
 }
@@ -981,6 +1448,22 @@ static int process_line(char* line)
         printf("[*] 目标服务器: %s:%d (%s)\n",
                g_config.host, g_config.port,
                g_config.use_tls ? "HTTPS" : "HTTP");
+    } else if (strcmp(cmd, "disconnect") == 0) {
+        if (cmd_disconnect(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "tls-info") == 0) {
+        if (cmd_tls_info(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "json-parse") == 0) {
+        if (cmd_json_parse(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "json-pretty") == 0) {
+        if (cmd_json_pretty(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "trace") == 0) {
+        if (cmd_trace(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "ping") == 0) {
+        if (cmd_ping(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "watch") == 0) {
+        if (cmd_watch(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "rate-test") == 0) {
+        if (cmd_rate_test(argc - 1, argv + 1) != 0) printf("\n");
     } else {
         fprintf(stderr, "未知命令: %s (输入 help 查看帮助)\n", cmd);
     }

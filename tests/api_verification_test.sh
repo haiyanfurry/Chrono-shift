@@ -7,8 +7,8 @@
 REPORT_DIR="reports"
 REPORT_FILE="${REPORT_DIR}/api_verification_results.md"
 HOST="127.0.0.1"
-PORT="8080"
-BASE_URL="http://${HOST}:${PORT}"
+PORT="4443"
+BASE_URL="https://${HOST}:${PORT}"
 PASS=0
 FAIL=0
 TOTAL=0

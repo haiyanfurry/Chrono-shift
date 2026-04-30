@@ -10,10 +10,17 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 file(GLOB SERVER_SOURCES
     src/*.c
 )
+# 排除 tls_stub.c (不再使用桩实现)
+list(REMOVE_ITEM SERVER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/tls_stub.c")
 
 add_executable(chrono-server ${SERVER_SOURCES})
 
 target_include_directories(chrono-server PRIVATE include)
+target_compile_definitions(chrono-server PRIVATE HAS_TLS)
+
+# 强制 OpenSSL 依赖
+find_package(OpenSSL REQUIRED)
+target_link_libraries(chrono-server PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 
 # ============================================================
 # 平台特定依赖
@@ -49,10 +56,12 @@ elseif(UNIX)
 endif()
 
 # ============================================================
-# CLI 调试工具
+# CLI 调试工具 (需要 OpenSSL + JSON 解析器 + TLS 客户端)
 # ============================================================
-add_executable(debug_cli tools/debug_cli.c)
+add_executable(debug_cli tools/debug_cli.c src/json_parser.c src/tls_server.c)
 target_include_directories(debug_cli PRIVATE include)
+target_compile_definitions(debug_cli PRIVATE HAS_TLS)
+target_link_libraries(debug_cli PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 
 if(WIN32)
     target_link_libraries(debug_cli PRIVATE ws2_32)

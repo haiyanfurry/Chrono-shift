@@ -20,6 +20,8 @@ enum IpcMessageType {
     IPC_APPLY_TEMPLATE = 0x31,
     IPC_FILE_UPLOAD    = 0x40,
     IPC_OPEN_URL       = 0x50,  /* 打开外部 URL（漫展等） */
+    IPC_CONNECTED      = 0x60,  /* 连接状态通知 */
+    IPC_DISCONNECTED   = 0x61,  /* 断开连接通知 */
     IPC_SYSTEM_NOTIFY  = 0xFF
 };
 
@@ -28,7 +30,7 @@ typedef void (*IpcCallback)(enum IpcMessageType type, const char* json_data, voi
 
 /* --- API --- */
 int  ipc_bridge_init(IpcCallback callback, void* user_data);
-int  ipc_send_to_js(const char* webview, const char* json_str);
+int  ipc_send_to_js(void* webview, const char* json_str);
 int  ipc_handle_from_js(const char* json_str);
 void ipc_register_handler(enum IpcMessageType type, IpcCallback handler);
 

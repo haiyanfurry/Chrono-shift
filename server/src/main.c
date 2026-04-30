@@ -30,7 +30,7 @@ static void set_default_config(ServerConfig* config)
 {
     memset(config, 0, sizeof(ServerConfig));
     strncpy(config->host, "0.0.0.0", sizeof(config->host) - 1);
-    config->port = 8080;
+    config->port = 4443;
     strncpy(config->db_path, "./data/db/chrono.db", sizeof(config->db_path) - 1);
     strncpy(config->storage_path, "./data/storage", sizeof(config->storage_path) - 1);
     strncpy(config->jwt_secret, "chrono-shift-jwt-secret-2024", sizeof(config->jwt_secret) - 1);
@@ -111,15 +111,15 @@ int main(int argc, char* argv[])
         } else if (strcmp(argv[i], "--tls-key") == 0 && i + 1 < argc) {
             strncpy(g_config.tls_key, argv[++i], sizeof(g_config.tls_key) - 1);
         } else if (strcmp(argv[i], "--help") == 0) {
-            printf("Chrono-shift Server v0.1.0\n");
+            printf("Chrono-shift Server v0.2.0\n");
             printf("用法: chrono-server [选项]\n");
             printf("选项:\n");
-            printf("  --port <port>          监听端口 (默认: 8080)\n");
+            printf("  --port <port>          监听端口 (默认: 4443)\n");
             printf("  --db <path>            数据库路径 (默认: ./data/db/chrono.db)\n");
             printf("  --storage <path>       文件存储路径 (默认: ./data/storage)\n");
             printf("  --log-level <0-3>      日志级别 (默认: 1)\n");
-            printf("  --tls-cert <path>      TLS 证书文件路径 (PEM 格式)\n");
-            printf("  --tls-key <path>       TLS 私钥文件路径 (PEM 格式)\n");
+            printf("  --tls-cert <path>      TLS 证书文件路径 (可选，不指定则自动生成)\n");
+            printf("  --tls-key <path>       TLS 私钥文件路径 (可选，不指定则自动生成)\n");
             printf("  --help                 显示此帮助\n");
             return 0;
         }
@@ -140,21 +140,27 @@ int main(int argc, char* argv[])
     /* 注册路由 */
     register_routes();
 
-    /* 初始化 TLS（如果配置了证书） */
+    /* 初始化 TLS（v0.2.0 起 TLS 为必需） */
     if (g_config.tls_cert[0] != '\0' && g_config.tls_key[0] != '\0') {
+        /* 用户指定了证书和私钥 */
         LOG_INFO("TLS 证书: %s", g_config.tls_cert);
         LOG_INFO("TLS 密钥: %s", g_config.tls_key);
         if (tls_server_init(g_config.tls_cert, g_config.tls_key) != 0) {
             LOG_ERROR("TLS 初始化失败");
             return 1;
         }
-        LOG_INFO("TLS 已启用 (端口 %d 将同时支持 HTTP + HTTPS)", g_config.port);
     } else if (g_config.tls_cert[0] != '\0' || g_config.tls_key[0] != '\0') {
         LOG_ERROR("必须同时指定 --tls-cert 和 --tls-key");
         return 1;
     } else {
-        LOG_INFO("TLS 未配置，仅 HTTP");
+        /* 尝试自动初始化 TLS（检查现有证书或自动生成自签名证书） */
+        LOG_INFO("未指定证书，尝试自动初始化 TLS...");
+        if (tls_server_auto_init("./certs") != 0) {
+            LOG_ERROR("TLS 自动初始化失败，无法启动服务器（TLS 为必需）");
+            return 1;
+        }
     }
+    LOG_INFO("TLS 已启用 (端口 %d, HTTPS only)", g_config.port);
 
     /* 启动服务器 */
     g_running = true;

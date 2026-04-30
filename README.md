@@ -100,6 +100,20 @@
 | [`tests/api_verification_test.sh`](tests/api_verification_test.sh) | API 功能验证脚本 |
 | [`tests/loopback_test.sh`](tests/loopback_test.sh) | 端到端回环测试脚本 |
 
+### 安全特性
+
+| 类别 | 措施 | 实现 |
+|------|------|------|
+| **传输加密** | TLS 1.3 (HTTPS-only，强制加密) | [`tls_server.c`](server/src/tls_server.c) — OpenSSL |
+| **密码存储** | Argon2id 密码哈希 (抗 GPU/ASIC 攻击) | [`server/security/src/password.rs`](server/security/src/password.rs) — Rust FFI |
+| **身份认证** | JWT 令牌签发与验证 (HS256) | [`server/security/src/auth.rs`](server/security/src/auth.rs) — Rust FFI |
+| **密钥管理** | 安全密钥存储与初始化 | [`server/security/src/key_mgmt.rs`](server/security/src/key_mgmt.rs) |
+| **响应头** | HSTS / CSP / X-Content-Type-Options / X-Frame-Options / Referrer-Policy | [`http_server.c`](server/src/http_server.c):663-672 |
+| **JSON 转义** | 输出编码防止 XSS 注入 | [`database.c`](server/src/database.c) + [`user_handler.c`](server/src/user_handler.c) |
+| **输入验证** | 用户名/昵称长度与字符限制 | [`user_handler.c`](server/src/user_handler.c) |
+| **自动重连** | 客户端断线自动恢复，指数退避 | [`network.c`](client/src/network.c) |
+| **渗透测试** | 自动化安全测试脚本 | [`tests/security_pen_test.sh`](tests/security_pen_test.sh) |
+
 ---
 
 ## 快速开始
@@ -114,8 +128,8 @@
 | **Windows** | MinGW-w64 GCC | WinSock2 (`-lws2_32`), OpenSSL DLL (`D:\mys32\mingw64\bin`) |
 
 **可选依赖**
-- **OpenSSL** (≥ 1.1.0): TLS/HTTPS 加密传输支持（`make HAS_TLS=1`）
-- **Rust** (≥ 1.70): 编译安全模块 (密码哈希 + JWT)
+- **OpenSSL** (≥ 1.1.0): **必需依赖** (TLS/HTTPS 强制加密传输)
+- **Rust** (≥ 1.70): 编译安全模块 (密码哈希 + JWT，可选)
 - **NSIS** (≥ 3.0): 制作 Windows 安装包
 - **bash**: 运行 shell 测试脚本
 
@@ -126,11 +140,8 @@
 ```bash
 cd server
 
-# 默认编译（无 TLS 加密，使用 TLS 桩，无需 OpenSSL）
-make
-
-# 启用 TLS 加密（需要安装 OpenSSL 开发库）
-make HAS_TLS=1
+# 编译全部 (TLS 强制启用，需安装 OpenSSL 开发库)
+make build
 
 # 生成自签名测试证书（开发/测试用）
 openssl req -x509 -newkey rsa:2048 \
@@ -152,26 +163,16 @@ make clean
 ```bash
 cd server
 
-# Linux (启用 TLS，需要 -DHAS_TLS)
+# Linux (需要 OpenSSL 开发库)
 gcc -std=c99 -Wall -Wextra -Iinclude -DHAS_TLS \
     src/*.c -o build/chrono-server -lpthread -lm -lssl -lcrypto
 
-# Linux (无 TLS，编译 tls_stub.c 代替 tls_server.c)
-gcc -std=c99 -Wall -Wextra -Iinclude \
-    $(filter-out src/tls_server.c, $(wildcard src/*.c)) \
-    -o build/chrono-server -lpthread -lm
-
-# Windows (MinGW，启用 TLS，需要 MinGW 版 OpenSSL)
+# Windows (MinGW，需要 MinGW 版 OpenSSL)
 gcc -std=c99 -Wall -Wextra -Iinclude -DHAS_TLS \
     src/*.c -o build/chrono-server.exe -lws2_32 -lssl -lcrypto
-
-# Windows (MinGW，无 TLS)
-gcc -std=c99 -Wall -Wextra -Iinclude \
-    $(filter-out src/tls_server.c, $(wildcard src/*.c)) \
-    -o build/chrono-server.exe -lws2_32
 ```
 
-> **TLS 说明**: 项目支持条件编译 — `tls_server.c`（真实 OpenSSL）和 `tls_stub.c`（空桩）。不指定 `HAS_TLS` 时自动使用桩实现，无需 OpenSSL。
+> **TLS 说明**: v0.2.0 起 TLS/HTTPS 为强制要求，OpenSSL 是必需依赖。`tls_stub.c` 桩实现已移除，所有通信必须使用 TLS 加密。
 
 **2. 测试工具**
 
@@ -203,11 +204,8 @@ cargo build --release
 ```bash
 cd server
 
-# HTTP 模式（默认）
-./build/chrono-server --port 8080 --db ./data/db/chrono.db
-
-# HTTPS 模式（需提供 TLS 证书和私钥）
-./build/chrono-server --port 8080 --db ./data/db/chrono.db \
+# 启动服务器（强制 TLS，默认端口 4443）
+./build/chrono-server --port 4443 --db ./data/db/chrono.db \
     --tls-cert ./certs/server.crt --tls-key ./certs/server.key
 ```
 
@@ -215,7 +213,7 @@ cd server
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
-| `--port` | 8080 | 监听端口 |
+| `--port` | 4443 | 监听端口 |
 | `--db` | `./data/db/chrono.db` | 数据库路径 |
 | `--storage` | `./data/storage` | 文件存储路径 |
 | `--log-level` | 1 | 日志级别 (0-3) |
@@ -223,33 +221,34 @@ cd server
 | `--tls-key` | - | TLS 私钥路径 (PEM) |
 | `--help` | - | 显示帮助信息 |
 
-> **注意**: `--tls-cert` 和 `--tls-key` 必须同时指定才能启用 HTTPS。不指定则运行纯 HTTP 模式。
+> **注意**: 从 v0.2.0 起，TLS/HTTPS 为强制要求。服务器必须使用 OpenSSL 加密，不再支持 HTTP 纯文本。
+> 如果未指定 `--tls-cert` 和 `--tls-key`，服务器将自动生成自签名证书。
 >
-> **Windows 注意**: 运行 TLS 版服务器前需将 OpenSSL DLL 目录加入 PATH:
+> **Windows 注意**: 运行前需将 OpenSSL DLL 目录加入 PATH:
 > ```cmd
 > set PATH=D:\mys32\mingw64\bin;%PATH%
-> build\chrono-server.exe --port 8443 --tls-cert certs\server.crt --tls-key certs\server.key
+> build\chrono-server.exe --port 4443 --tls-cert certs\server.crt --tls-key certs\server.key
 > ```
 
 启动后访问:
-- HTTP: `http://localhost:8080` (Web UI)
-- HTTPS: `https://localhost:8080` (需信任自签名证书或使用受信任 CA)
+- **HTTPS only**: `https://localhost:4443` (需信任自签名证书或使用受信任 CA)
+- HTTP 纯文本已被移除，所有通信强制加密。
 
 ### API 快速测试
 
 ```bash
 # 注册
-curl -X POST http://localhost:8080/api/user/register \
+curl -k -X POST https://localhost:4443/api/user/register \
   -H "Content-Type: application/json" \
   -d '{"username":"test","password":"test123","nickname":"测试用户"}'
 
 # 登录
-curl -X POST http://localhost:8080/api/user/login \
+curl -k -X POST https://localhost:4443/api/user/login \
   -H "Content-Type: application/json" \
   -d '{"username":"test","password":"test123"}'
 
 # 获取用户信息 (使用登录返回的 token)
-curl http://localhost:8080/api/user/profile?user_id=1 \
+curl -k https://localhost:4443/api/user/profile?user_id=1 \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -272,8 +271,7 @@ Chrono-shift/
 │   │   ├── json_parser.c      # JSON 解析器
 │   │   ├── protocol.c         # 通信协议编码
 │   │   ├── utils.c            # 工具函数
-│   │   ├── tls_server.c       # TLS 真实实现 (OpenSSL，需 HAS_TLS)
-│   │   ├── tls_stub.c         # TLS 桩实现 (无 OpenSSL 回退)
+│   │   ├── tls_server.c       # TLS 实现 (OpenSSL，强制启用)
 │   │   └── rust_stubs.c       # Rust FFI 桩函数 (测试用)
 │   ├── include/               # 头文件
 │   ├── tools/                 # 测试工具
@@ -366,21 +364,17 @@ IPC (进程间通信) 基于 WebSocket + 二进制消息帧，支持 9 种消息
 # 服务端编译测试 (使用 Makefile)
 cd server
 
-# 无 TLS 模式 (默认，无需 OpenSSL)
+# 编译全部 (TLS 强制启用)
 mingw32-make build
-
-# 启动服务器（HTTP 模式）
-build/chrono-server.exe --port 8080
-
-# 启动服务器（HTTPS 模式，需准备证书和 OpenSSL）
-make HAS_TLS=1 clean build
 
 # Windows: 需先将 OpenSSL DLL 加入 PATH
 set PATH=D:\mys32\mingw64\bin;%PATH%
-build/chrono-server.exe --port 8443 --tls-cert certs\server.crt --tls-key certs\server.key
+
+# 启动服务器（端口 4443）
+build\chrono-server.exe --port 4443
 
 # 使用 openssl 验证 TLS 连接
-openssl s_client -connect 127.0.0.1:8443
+openssl s_client -connect 127.0.0.1:4443
 ```
 
 ### Shell 测试脚本 (需 bash)
@@ -400,7 +394,7 @@ bash tests/loopback_test.sh
 
 ```bash
 cd server
-./build/stress_test --host 127.0.0.1 --port 8080 --threads 4 --qps 100 --duration 30
+./build/stress_test --host 127.0.0.1 --port 4443 --threads 4 --qps 100 --duration 30
 ```
 
 ---

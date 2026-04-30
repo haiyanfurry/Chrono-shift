@@ -59,13 +59,28 @@ static char* get_json_string_field(const uint8_t* body, size_t body_len, const c
 static char* build_user_data_json(int64_t user_id, const char* username,
                                    const char* nickname, const char* avatar_url)
 {
-    size_t len = 512;
-    if (username) len += strlen(username);
-    if (nickname) len += strlen(nickname);
-    if (avatar_url) len += strlen(avatar_url);
+    /* 先转义各字符串字段, 防止 JSON 注入 */
+    char* safe_username    = json_escape_string(username ? username : "");
+    char* safe_nickname    = json_escape_string(nickname ? nickname : "");
+    char* safe_avatar_url  = json_escape_string(avatar_url ? avatar_url : "");
+
+    if (!safe_username || !safe_nickname || !safe_avatar_url) {
+        free(safe_username);
+        free(safe_nickname);
+        free(safe_avatar_url);
+        return NULL;
+    }
+
+    /* 计算所需缓冲区大小 */
+    size_t len = 128 + strlen(safe_username) + strlen(safe_nickname) + strlen(safe_avatar_url);
 
     char* json = (char*)malloc(len);
-    if (!json) return NULL;
+    if (!json) {
+        free(safe_username);
+        free(safe_nickname);
+        free(safe_avatar_url);
+        return NULL;
+    }
 
     snprintf(json, len,
              "{"
@@ -75,9 +90,13 @@ static char* build_user_data_json(int64_t user_id, const char* username,
              "\"avatar_url\":\"%s\""
              "}",
              (long long)user_id,
-             username ? username : "",
-             nickname ? nickname : "",
-             avatar_url ? avatar_url : "");
+             safe_username,
+             safe_nickname,
+             safe_avatar_url);
+
+    free(safe_username);
+    free(safe_nickname);
+    free(safe_avatar_url);
 
     return json;
 }

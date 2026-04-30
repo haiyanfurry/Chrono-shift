@@ -1,6 +1,6 @@
 /**
  * 墨竹 (Chrono-shift) 压力测试框架
- * 
+ *
  * 用途：评估服务器在高负载下的抗冲击能力
  * 特性：
  *   - 多线程并发请求
@@ -8,13 +8,16 @@
  *   - 实时统计：QPS、延迟(P50/P95/P99)、错误率
  *   - 支持多种测试场景
  *   - Windows (WinSock2) + Linux (POSIX) 双平台
+ *   - HTTPS (TLS/SSL) 支持 (强制启用)
  *
  * 编译:
- *   Windows: cl stress_test.c /I../include /Fe:stress_test.exe /link ws2_32.lib
- *   Linux:   gcc stress_test.c -I../include -o stress_test -lpthread -lm
+ *   Windows: gcc -std=c99 -Wall -I../include stress_test.c ../src/tls_server.c
+ *                -o stress_test -lws2_32 -LD:/mys32/mingw64/lib -lssl -lcrypto
+ *   Linux:   gcc -std=c99 -Wall -I../include stress_test.c ../src/tls_server.c
+ *                -o stress_test -lpthread -lm -lssl -lcrypto
  *
  * 使用:
- *   stress_test --host 127.0.0.1 --port 8080 --threads 4 --qps 100 --duration 30
+ *   stress_test --host 127.0.0.1 --port 4443 --threads 4 --qps 100 --duration 30
  */
 
 #include <stdio.h>
@@ -56,6 +59,9 @@
     #define SOCKET_ERROR (-1)
     #define closesocket(fd) close(fd)
 #endif
+
+/* TLS/HTTPS 支持 — tls_server.h 提供客户端 API */
+#include "../include/tls_server.h"
 
 /* ============================================================
    配置
@@ -110,6 +116,7 @@ typedef struct {
     int  qps_target;
     int  duration_sec;
     int  scenario_index;
+    int  use_ssl;        /* 是否使用 HTTPS (TLS), 默认启用 */
     int  verbose;
 } Config;
 
@@ -119,11 +126,12 @@ typedef struct {
 
 static Config g_config = {
     .host = "127.0.0.1",
-    .port = 8080,
+    .port = 4443,
     .threads = 4,
     .qps_target = 100,
     .duration_sec = 30,
     .scenario_index = 0,
+    .use_ssl = 1,        /* HTTPS 强制启用 */
     .verbose = 0
 };
 
@@ -185,34 +193,9 @@ static int http_request(
     char* response, int resp_size,
     long long* latency_us
 ) {
-    SOCKET sock;
-    struct sockaddr_in addr;
-    struct hostent* host;
-    char request[4096];
-    char header_buf[4096];
+    char request[8192];
     int ret = -1;
     long long t0, t1;
-
-    /* 创建 socket */
-    sock = (int)socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == INVALID_SOCKET) return -1;
-
-    /* DNS 解析 */
-    host = gethostbyname(g_config.host);
-    if (!host) {
-        closesocket(sock);
-        return -1;
-    }
-
-    /* 连接 */
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons((unsigned short)g_config.port);
-    memcpy(&addr.sin_addr, host->h_addr_list[0], (size_t)host->h_length);
-
-    if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
-        closesocket(sock);
-        return -1;
-    }
 
     /* 构建 HTTP 请求 */
     if (body && content_type) {
@@ -241,29 +224,111 @@ static int http_request(
         );
     }
 
-    /* 计时开始 */
-    t0 = get_time_us();
+    if (g_config.use_ssl) {
+        /* ================================================================
+         * HTTPS 模式: 使用 tls_client API 建立加密连接
+         * ================================================================ */
+        SSL* ssl = NULL;
 
-    /* 发送请求 */
-    if (send(sock, request, (int)strlen(request), 0) == SOCKET_ERROR) {
-        closesocket(sock);
-        return -1;
-    }
+        /* 计时开始 (包含 TCP 连接 + TLS 握手 + 请求收发) */
+        t0 = get_time_us();
 
-    /* 接收响应（仅读取前 resp_size 字节） */
-    {
-        int total = 0;
-        int n;
-        while (total < resp_size - 1) {
-            n = (int)recv(sock, response + total, (int)(resp_size - 1 - total), 0);
-            if (n <= 0) break;
-            total += n;
+        /* tls_client_init 在 worker 线程中首次调用时初始化全局 ctx */
+        if (tls_client_init(NULL) != 0) {
+            /* 初始化失败 — 非致命, 下次重试 */
+            return -1;
         }
-        response[total] = '\0';
-    }
 
-    /* 计时结束 */
-    t1 = get_time_us();
+        /* 连接 (TCP + TLS 握手) */
+        if (tls_client_connect(&ssl, g_config.host, (uint16_t)g_config.port) != 0) {
+            return -1;
+        }
+
+        /* 发送请求 */
+        {
+            int total = 0;
+            int len = (int)strlen(request);
+            while (total < len) {
+                int n = (int)tls_write(ssl, request + total, (size_t)(len - total));
+                if (n <= 0) {
+                    tls_close(ssl);
+                    return -1;
+                }
+                total += n;
+            }
+        }
+
+        /* 接收响应 */
+        {
+            int total = 0;
+            int n;
+            while (total < resp_size - 1) {
+                n = (int)tls_read(ssl, response + total, (size_t)(resp_size - 1 - total));
+                if (n <= 0) break;
+                total += n;
+            }
+            response[total] = '\0';
+        }
+
+        /* 计时结束 */
+        t1 = get_time_us();
+
+        tls_close(ssl);
+    } else {
+        /* ================================================================
+         * HTTP 明文模式 (用于开发/调试)
+         * ================================================================ */
+        SOCKET sock;
+        struct sockaddr_in addr;
+        struct hostent* host;
+
+        /* 创建 socket */
+        sock = (int)socket(AF_INET, SOCK_STREAM, 0);
+        if (sock == INVALID_SOCKET) return -1;
+
+        /* DNS 解析 */
+        host = gethostbyname(g_config.host);
+        if (!host) {
+            closesocket(sock);
+            return -1;
+        }
+
+        /* 连接 */
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((unsigned short)g_config.port);
+        memcpy(&addr.sin_addr, host->h_addr_list[0], (size_t)host->h_length);
+
+        if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR) {
+            closesocket(sock);
+            return -1;
+        }
+
+        /* 计时开始 */
+        t0 = get_time_us();
+
+        /* 发送请求 */
+        if (send(sock, request, (int)strlen(request), 0) == SOCKET_ERROR) {
+            closesocket(sock);
+            return -1;
+        }
+
+        /* 接收响应 */
+        {
+            int total = 0;
+            int n;
+            while (total < resp_size - 1) {
+                n = (int)recv(sock, response + total, (int)(resp_size - 1 - total), 0);
+                if (n <= 0) break;
+                total += n;
+            }
+            response[total] = '\0';
+        }
+
+        /* 计时结束 */
+        t1 = get_time_us();
+
+        closesocket(sock);
+    }
 
     if (latency_us) *latency_us = t1 - t0;
 
@@ -277,7 +342,6 @@ static int http_request(
         ret = -1; /* 无效响应 */
     }
 
-    closesocket(sock);
     return ret;
 }
 
@@ -365,14 +429,16 @@ static void print_usage(void) {
     printf("用法: stress_test [选项]\n\n");
     printf("选项:\n");
     printf("  --host <ip>       服务器地址 (默认: 127.0.0.1)\n");
-    printf("  --port <port>     服务器端口 (默认: 8080)\n");
+    printf("  --port <port>     服务器端口 (默认: 4443)\n");
     printf("  --threads <n>     并发线程数 (默认: 4, 最大: %d)\n", MAX_THREADS);
     printf("  --qps <n>         QPS 目标 (默认: 100)\n");
     printf("  --duration <s>    测试持续时间 (秒) (默认: 30)\n");
     printf("  --scenario <n>    测试场景索引 (默认: 0)\n");
+    printf("  --no-ssl          禁用 HTTPS (使用明文 HTTP, 仅用于调试)\n");
     printf("  --list-scenarios  列出所有测试场景\n");
     printf("  --verbose         详细输出\n");
     printf("  --help            显示此帮助\n\n");
+    printf("默认启用 HTTPS (TLS) — 服务器仅支持加密连接\n\n");
     printf("测试场景:\n");
     for (int i = 0; SCENARIOS[i].name; i++) {
         printf("  [%d] %s (%s %s)\n", i, SCENARIOS[i].name, SCENARIOS[i].method, SCENARIOS[i].path);
@@ -586,6 +652,8 @@ int main(int argc, char* argv[]) {
             g_config.duration_sec = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--scenario") == 0 && i + 1 < argc) {
             g_config.scenario_index = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--no-ssl") == 0) {
+            g_config.use_ssl = 0;
         } else if (strcmp(argv[i], "--list-scenarios") == 0) {
             print_scenarios();
 #ifdef _WIN32
@@ -619,6 +687,7 @@ int main(int argc, char* argv[]) {
     printf("  墨竹 (Chrono-shift) 压力测试\n");
     printf("========================================\n");
     printf("  服务器:  %s:%d\n", g_config.host, g_config.port);
+    printf("  协议:    %s\n", g_config.use_ssl ? "HTTPS (TLS)" : "HTTP (明文)");
     printf("  场景:    %s\n", SCENARIOS[g_config.scenario_index].name);
     printf("  线程数:  %d\n", g_config.threads);
     printf("  QPS:     %d\n", g_config.qps_target);

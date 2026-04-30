@@ -609,29 +609,34 @@ char* json_escape_string(const char* input)
     if (!input) return NULL;
 
     size_t len = strlen(input);
-    size_t escaped_len = len + 2; /* 引号 */
-    for (size_t i = 0; i < len; i++) {
-        if (input[i] == '"' || input[i] == '\\' || input[i] == '\n' || input[i] == '\t') {
-            escaped_len++;
-        }
-    }
-
-    char* result = (char*)malloc(escaped_len + 1);
-    if (!result) return NULL;
+    /* 最坏情况: 每个字符都需要转义为 \uXXXX (6字节) */
+    size_t max_len = len * 6 + 1;
+    char* escaped = (char*)malloc(max_len);
+    if (!escaped) return NULL;
 
     size_t j = 0;
-    result[j++] = '"';
     for (size_t i = 0; i < len; i++) {
-        switch (input[i]) {
-            case '"':  result[j++] = '\\'; result[j++] = '"';  break;
-            case '\\': result[j++] = '\\'; result[j++] = '\\'; break;
-            case '\n': result[j++] = '\\'; result[j++] = 'n';  break;
-            case '\t': result[j++] = '\\'; result[j++] = 't';  break;
-            default:   result[j++] = input[i];                  break;
+        unsigned char c = (unsigned char)input[i];
+        switch (c) {
+            case '\"': escaped[j++] = '\\'; escaped[j++] = '\"'; break;
+            case '\\': escaped[j++] = '\\'; escaped[j++] = '\\'; break;
+            case '\b': escaped[j++] = '\\'; escaped[j++] = 'b';  break;
+            case '\f': escaped[j++] = '\\'; escaped[j++] = 'f';  break;
+            case '\n': escaped[j++] = '\\'; escaped[j++] = 'n';  break;
+            case '\r': escaped[j++] = '\\'; escaped[j++] = 'r';  break;
+            case '\t': escaped[j++] = '\\'; escaped[j++] = 't';  break;
+            default:
+                if (c < 0x20) {
+                    /* 控制字符: \uXXXX */
+                    int n = snprintf(escaped + j, max_len - j, "\\u%04x", c);
+                    if (n > 0) j += (size_t)n;
+                } else {
+                    escaped[j++] = (char)c;
+                }
+                break;
         }
+        if (j >= max_len - 1) break;
     }
-    result[j++] = '"';
-    result[j] = '\0';
-
-    return result;
+    escaped[j] = '\0';
+    return escaped;
 }

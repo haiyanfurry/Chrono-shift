@@ -25,7 +25,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # --- 配置 ---
-BASE_URL="${BASE_URL:-http://127.0.0.1:8080}"
+BASE_URL="${BASE_URL:-https://127.0.0.1:4443}"
 SERVER_BIN="${SERVER_BIN:-./server/build/chrono_server}"
 SERVER_LOG="./loopback_server.log"
 TEST_USER="loopback_test_$(date +%s)"

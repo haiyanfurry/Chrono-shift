@@ -1,12 +1,18 @@
 //! JWT 令牌生成与验证
 //! 提供给 C99 后端的 FFI 接口
+//!
+//! 安全性: 签名密钥通过 key_mgmt 模块从磁盘加载随机生成的密钥,
+//! 不再使用编译期硬编码的静态字符串。
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+
+use crate::key_mgmt;
 
 /// JWT 声明结构
 #[derive(Debug, Serialize, Deserialize)]
@@ -17,13 +23,27 @@ struct Claims {
     role: String,      // 角色
 }
 
-static SECRET: &str = "CHRONO_SHIFT_JWT_SECRET_CHANGE_IN_PRODUCTION";
+/// 缓存 JWT 密钥加载结果
+static JWT_KEY: OnceLock<[u8; 32]> = OnceLock::new();
+
+/// 初始化 JWT 子系统 (从 key_mgmt 加载密钥)
+/// 在 rust_server_init 之后调用
+fn ensure_key_loaded() -> bool {
+    JWT_KEY.get().is_some() || {
+        if let Some(key) = key_mgmt::get_jwt_secret() {
+            let _ = JWT_KEY.set(key);
+            true
+        } else {
+            false
+        }
+    }
+}
 
 /// 生成 JWT 令牌
 /// 返回令牌字符串，需要调用 rust_free_string 释放
 #[no_mangle]
 pub extern "C" fn rust_generate_jwt(user_id: *const c_char) -> *mut c_char {
-    if user_id.is_null() {
+    if user_id.is_null() || !ensure_key_loaded() {
         return std::ptr::null_mut();
     }
     let uid = match unsafe { CStr::from_ptr(user_id) }.to_str() {
@@ -43,10 +63,11 @@ pub extern "C" fn rust_generate_jwt(user_id: *const c_char) -> *mut c_char {
         role: "user".to_string(),
     };
 
+    let secret = JWT_KEY.get().unwrap();
     let token = match encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(SECRET.as_ref()),
+        &EncodingKey::from_secret(secret.as_ref()),
     ) {
         Ok(t) => t,
         Err(_) => return std::ptr::null_mut(),
@@ -59,7 +80,7 @@ pub extern "C" fn rust_generate_jwt(user_id: *const c_char) -> *mut c_char {
 /// 成功返回用户 ID 字符串，失败返回 NULL
 #[no_mangle]
 pub extern "C" fn rust_verify_jwt(token: *const c_char) -> *mut c_char {
-    if token.is_null() {
+    if token.is_null() || !ensure_key_loaded() {
         return std::ptr::null_mut();
     }
     let t = match unsafe { CStr::from_ptr(token) }.to_str() {
@@ -67,9 +88,10 @@ pub extern "C" fn rust_verify_jwt(token: *const c_char) -> *mut c_char {
         Err(_) => return std::ptr::null_mut(),
     };
 
+    let secret = JWT_KEY.get().unwrap();
     let token_data = match decode::<Claims>(
         t,
-        &DecodingKey::from_secret(SECRET.as_ref()),
+        &DecodingKey::from_secret(secret.as_ref()),
         &Validation::default(),
     ) {
         Ok(data) => data,

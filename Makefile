@@ -31,6 +31,6 @@ installer: server client
 
 # ---- 清理 ----
 clean:
-	rm -rf server/build client/build
+	rm -rf server/build client/build server/out
 	cd server/security && cargo clean 2>/dev/null || true
 	cd client/security && cargo clean 2>/dev/null || true
