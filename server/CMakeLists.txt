@@ -58,7 +58,7 @@ endif()
 # ============================================================
 # CLI 调试工具 (需要 OpenSSL + JSON 解析器 + TLS 客户端)
 # ============================================================
-add_executable(debug_cli tools/debug_cli.c src/json_parser.c src/tls_server.c)
+add_executable(debug_cli tools/debug_cli.c src/json_parser.c src/tls_server.c src/platform_compat.c)
 target_include_directories(debug_cli PRIVATE include)
 target_compile_definitions(debug_cli PRIVATE HAS_TLS)
 target_link_libraries(debug_cli PRIVATE OpenSSL::SSL OpenSSL::Crypto)
