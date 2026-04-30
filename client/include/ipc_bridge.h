@@ -19,6 +19,7 @@ enum IpcMessageType {
     IPC_GET_TEMPLATES  = 0x30,
     IPC_APPLY_TEMPLATE = 0x31,
     IPC_FILE_UPLOAD    = 0x40,
+    IPC_OPEN_URL       = 0x50,  /* 打开外部 URL（漫展等） */
     IPC_SYSTEM_NOTIFY  = 0xFF
 };
 

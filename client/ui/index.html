@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https:; connect-src 'self' ws: wss: http: https:;">
-    <title>Chrono-shift</title>
+    <title>墨竹 — Chrono-shift</title>
     
     <!-- 全局样式 -->
     <link rel="stylesheet" href="css/variables.css">
@@ -32,10 +32,15 @@
     <div id="app-container">
         <!-- 登录/注册页面 -->
         <div id="page-auth" class="page active">
+            <!-- 装饰浮动元素 -->
+            <div class="auth-deco-1"></div>
+            <div class="auth-deco-2"></div>
+            
             <div class="auth-container">
                 <div class="auth-box">
                     <div class="auth-logo">
-                        <h1>Chrono-shift</h1>
+                        <div class="logo-icon">🎋</div>
+                        <h1>墨竹</h1>
                         <p class="auth-subtitle">二次元社交平台</p>
                     </div>
                     
@@ -83,6 +88,7 @@
                 <div class="sidebar-header">
                     <div class="user-avatar" id="current-user-avatar">
                         <img src="assets/images/default_avatar.png" alt="头像">
+                        <span class="status-dot"></span>
                     </div>
                     <span class="user-name" id="current-user-name">用户</span>
                     <button class="btn-icon" onclick="showSettings()" title="设置">⚙</button>
@@ -97,12 +103,43 @@
                 <div class="contact-list" id="contact-list">
                     <!-- 动态由 JS 生成 -->
                 </div>
+
+                <!-- 外部网站跳转入口 -->
+                <div class="external-links">
+                    <div class="external-links-label">外部链接</div>
+                    <div class="external-links-list">
+                        <a class="external-link-item" href="#" onclick="openExternalUrl('bilibili')">
+                            <span class="link-icon">📺</span>
+                            <span class="link-name">Bilibili</span>
+                            <span class="link-arrow">→</span>
+                        </a>
+                        <a class="external-link-item" href="#" onclick="openExternalUrl('acfun')">
+                            <span class="link-icon">📡</span>
+                            <span class="link-name">AcFun</span>
+                            <span class="link-arrow">→</span>
+                        </a>
+                        <a class="external-link-item" href="#" onclick="openExternalUrl('comic-expo')">
+                            <span class="link-icon">🎪</span>
+                            <span class="link-name">漫展官网</span>
+                            <span class="link-arrow">→</span>
+                        </a>
+                    </div>
+                </div>
                 
                 <!-- 底部导航 -->
                 <div class="sidebar-footer">
-                    <button class="btn-nav active" onclick="switchTab('chat')" id="tab-chat">💬 消息</button>
-                    <button class="btn-nav" onclick="switchTab('contacts')" id="tab-contacts">👥 联系人</button>
-                    <button class="btn-nav" onclick="switchTab('community')" id="tab-community">🎨 社区</button>
+                    <button class="btn-nav active" onclick="switchTab('chat')" id="tab-chat">
+                        <span class="nav-icon">💬</span>
+                        <span class="nav-label">消息</span>
+                    </button>
+                    <button class="btn-nav" onclick="switchTab('contacts')" id="tab-contacts">
+                        <span class="nav-icon">👥</span>
+                        <span class="nav-label">联系人</span>
+                    </button>
+                    <button class="btn-nav" onclick="switchTab('community')" id="tab-community">
+                        <span class="nav-icon">🎨</span>
+                        <span class="nav-label">社区</span>
+                    </button>
                 </div>
             </div>
             
@@ -115,6 +152,7 @@
                     </div>
                     <div class="chat-messages" id="chat-messages">
                         <div class="no-chat-selected">
+                            <div class="no-chat-icon">💬</div>
                             <p>选择一个好友开始对话</p>
                         </div>
                     </div>
@@ -131,7 +169,7 @@
                 <div id="view-contacts" class="content-view">
                     <div class="contacts-header">
                         <h2>联系人</h2>
-                        <button class="btn btn-small" onclick="showAddFriend()">+ 添加好友</button>
+                        <button class="btn btn-small btn-primary" onclick="showAddFriend()">+ 添加好友</button>
                     </div>
                     <div class="contacts-grid" id="contacts-grid">
                         <!-- 动态由 JS 生成 -->
@@ -142,7 +180,7 @@
                 <div id="view-community" class="content-view">
                     <div class="community-header">
                         <h2>社区模板</h2>
-                        <button class="btn btn-small" onclick="showUploadTemplate()">+ 上传模板</button>
+                        <button class="btn btn-small btn-primary" onclick="showUploadTemplate()">+ 上传模板</button>
                     </div>
                     <div class="template-grid" id="template-grid">
                         <!-- 动态由 JS 生成 -->
@@ -156,7 +194,7 @@
                     </div>
                     <div class="settings-content">
                         <div class="settings-section">
-                            <h3>个人资料</h3>
+                            <h3>📋 个人资料</h3>
                             <div class="form-group">
                                 <label>昵称</label>
                                 <input type="text" id="settings-nickname">
@@ -164,13 +202,13 @@
                             <button class="btn btn-primary" onclick="updateProfile()">保存</button>
                         </div>
                         <div class="settings-section">
-                            <h3>主题</h3>
+                            <h3>🎨 主题</h3>
                             <p>当前主题: <span id="current-theme-name">纯白默认</span></p>
                             <button class="btn btn-secondary" onclick="resetTheme()">恢复默认主题</button>
                         </div>
                         <div class="settings-section">
-                            <h3>关于</h3>
-                            <p>Chrono-shift v0.1.0</p>
+                            <h3>ℹ️ 关于</h3>
+                            <p>Chrono-shift v0.1.0 — 墨竹</p>
                             <button class="btn btn-secondary" onclick="logout()">退出登录</button>
                         </div>
                     </div>

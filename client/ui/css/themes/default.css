@@ -1,45 +1,11 @@
 /**
- * Chrono-shift 纯白默认主题
- * 作为所有主题的基础，社区模板通过覆盖 CSS 变量实现
+ * 墨竹 (Chrono-shift) 默认主题
+ * 基于 CSS 变量系统的纯白主题
+ * 社区模板通过覆盖 :root 变量实现
  */
-
 :root {
-    /* === 纯白背景 === */
-    --color-bg-primary: #FFFFFF;
-    --color-bg-secondary: #F9FAFB;
-    --color-bg-tertiary: #F3F4F6;
-    --color-bg-hover: #F0F0FF;
-    --color-bg-active: #E8E0FF;
-    
-    /* === 文字 === */
-    --color-text-primary: #1A1A2E;
-    --color-text-secondary: #6B7280;
-    
-    /* === 主色调 — 淡紫色 === */
-    --color-primary: #7C5CFC;
-    --color-primary-hover: #6B4DE6;
-    --color-primary-light: #E8E0FF;
-    --color-primary-bg: #F5F0FF;
-    
-    /* === 边框 === */
-    --color-border: #E5E7EB;
-    --color-border-light: #F0F0F0;
-    
-    /* === 阴影 === */
-    --color-shadow: rgba(124, 92, 252, 0.1);
-    --color-shadow-dark: rgba(0, 0, 0, 0.06);
-    
-    /* === 侧边栏背景 === */
-    --sidebar-bg: var(--color-bg-secondary);
-    
-    /* === 聊天气泡 === */
-    --bubble-self-bg: var(--color-primary);
-    --bubble-self-text: #FFFFFF;
-    --bubble-other-bg: var(--color-bg-tertiary);
-    --bubble-other-text: var(--color-text-primary);
-    
-    /* === 头像 === */
-    --avatar-border: 2px solid var(--color-border-light);
-    --avatar-size: 40px;
-    --avatar-size-lg: 56px;
+    /* === 微调默认主题 === */
+    --color-bg-primary: #FAFAFA;
+    --color-bg-secondary: #F1F5F9;
+    --color-bg-tertiary: #E2E8F0;
 }

@@ -1,5 +1,6 @@
 /**
- * 主界面布局样式
+ * 墨竹 (Chrono-shift) 主界面布局
+ * 侧边栏 + 内容区 + 底部导航 + 外部链接区域
  */
 
 #page-main {
@@ -12,24 +13,41 @@
     display: flex;
 }
 
-/* === 侧边栏 === */
+/* ========================================
+   侧边栏 (Sidebar)
+   ======================================== */
 .sidebar {
     width: var(--sidebar-width);
     min-width: var(--sidebar-width);
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: var(--sidebar-bg, var(--color-bg-secondary));
+    background: var(--gradient-sidebar);
     border-right: 1px solid var(--color-border);
     overflow: hidden;
+    position: relative;
 }
 
+/* 侧边栏顶部装饰线 */
+.sidebar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient-primary);
+    z-index: 1;
+}
+
+/* 侧边栏头部 — 用户信息 */
 .sidebar-header {
     display: flex;
     align-items: center;
     padding: var(--spacing-lg);
     border-bottom: 1px solid var(--color-border-light);
     gap: var(--spacing-sm);
+    position: relative;
 }
 
 .user-avatar {
@@ -39,12 +57,31 @@
     overflow: hidden;
     border: var(--avatar-border, 2px solid var(--color-border-light));
     flex-shrink: 0;
+    position: relative;
+    transition: var(--transition-normal);
+}
+
+.user-avatar:hover {
+    border-color: var(--color-primary);
+    transform: scale(1.05);
 }
 
 .user-avatar img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+}
+
+/* 在线状态指示点 */
+.user-avatar .status-dot {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--color-bg-primary);
+    background: var(--avatar-online-dot);
 }
 
 .user-name {
@@ -54,12 +91,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--color-text-primary);
 }
 
 .sidebar-header .btn-icon {
     margin-left: auto;
 }
 
+/* === 搜索栏 === */
 .search-bar {
     padding: var(--spacing-md) var(--spacing-lg);
     border-bottom: 1px solid var(--color-border-light);
@@ -67,18 +106,37 @@
 
 .search-bar input {
     border-radius: var(--border-radius-full);
-    padding: 8px 16px;
+    padding: 8px 16px 8px 36px;
     font-size: var(--font-size-sm);
     background: var(--color-bg-tertiary);
     border-color: transparent;
+    transition: all var(--transition-normal);
 }
 
 .search-bar input:focus {
-    background: var(--color-bg-primary);
+    background: var(--color-bg-card);
     border-color: var(--color-border-focus);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.10);
 }
 
-/* 联系人列表 */
+/* 搜索图标 */
+.search-bar {
+    position: relative;
+}
+
+.search-bar::before {
+    content: '🔍';
+    position: absolute;
+    left: calc(var(--spacing-lg) + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    z-index: 1;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* === 联系人列表 === */
 .contact-list {
     flex: 1;
     overflow-y: auto;
@@ -90,8 +148,11 @@
     align-items: center;
     padding: var(--spacing-md) var(--spacing-lg);
     cursor: pointer;
-    transition: background var(--transition-fast);
+    transition: all var(--transition-fast);
     gap: var(--spacing-md);
+    position: relative;
+    margin: 0 var(--spacing-sm);
+    border-radius: var(--border-radius-md);
 }
 
 .contact-item:hover {
@@ -100,6 +161,32 @@
 
 .contact-item.active {
     background: var(--color-bg-active);
+}
+
+/* 激活指示条 */
+.contact-item.active::before {
+    content: '';
+    position: absolute;
+    left: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 3px;
+    height: 24px;
+    background: var(--sidebar-indicator-color);
+    border-radius: 0 3px 3px 0;
+}
+
+.contact-item .contact-avatar {
+    position: relative;
+    flex-shrink: 0;
+}
+
+.contact-item .contact-avatar img {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--border-radius-full);
+    object-fit: cover;
+    border: 2px solid var(--color-border-light);
 }
 
 .contact-item .contact-info {
@@ -131,12 +218,88 @@
     flex-shrink: 0;
 }
 
-/* 底部导航 */
+.contact-item .unread-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+}
+
+/* ========================================
+   外部网站跳转入口 (外部链接区域)
+   ======================================== */
+.external-links {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-top: 1px solid var(--color-border-light);
+    background: rgba(255, 255, 255, 0.5);
+}
+
+.external-links-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--color-text-tertiary);
+    margin-bottom: var(--spacing-sm);
+    padding: 0 var(--spacing-sm);
+}
+
+.external-links-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.external-link-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-sm);
+    border-radius: var(--border-radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    text-decoration: none;
+}
+
+.external-link-item:hover {
+    background: var(--color-bg-hover);
+    color: var(--color-primary);
+}
+
+.external-link-item .link-icon {
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.external-link-item .link-name {
+    flex: 1;
+}
+
+.external-link-item .link-arrow {
+    font-size: 10px;
+    opacity: 0;
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.external-link-item:hover .link-arrow {
+    opacity: 1;
+    transform: translateX(3px);
+}
+
+/* ========================================
+   底部导航 (Bottom Navigation)
+   ======================================== */
 .sidebar-footer {
     display: flex;
     border-top: 1px solid var(--color-border);
     padding: var(--spacing-xs);
-    background: var(--color-bg-primary);
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(8px);
 }
 
 .btn-nav {
@@ -150,6 +313,20 @@
     border-radius: var(--border-radius-sm);
     transition: all var(--transition-fast);
     font-family: var(--font-family);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    position: relative;
+}
+
+.btn-nav .nav-icon {
+    font-size: 18px;
+    line-height: 1;
+}
+
+.btn-nav .nav-label {
+    font-size: 10px;
 }
 
 .btn-nav:hover {
@@ -163,7 +340,9 @@
     font-weight: 500;
 }
 
-/* === 主内容区 === */
+/* ========================================
+   主内容区 (Main Content)
+   ======================================== */
 .main-content {
     flex: 1;
     display: flex;

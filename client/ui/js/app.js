@@ -61,7 +61,7 @@ const onSearchInput = debounce(async function (keyword) {
             const item = document.createElement('div');
             item.className = 'contact-item';
             item.innerHTML = `
-                <div class="user-avatar">
+                <div class="contact-avatar">
                     <img src="${user.avatar_url || 'assets/images/default_avatar.png'}" alt="头像">
                 </div>
                 <div class="contact-info">
@@ -134,9 +134,32 @@ function logout() {
     Auth.logout();
 }
 
+// === 外部链接跳转 ===
+const EXTERNAL_URLS = {
+    'bilibili': 'https://www.bilibili.com',
+    'acfun': 'https://www.acfun.cn',
+    'comic-expo': 'https://www.comic-expo.com'
+};
+
+function openExternalUrl(key) {
+    const url = EXTERNAL_URLS[key];
+    if (!url) {
+        showNotification('未知的链接', 'error');
+        return;
+    }
+    
+    // 通过 IPC 发送打开 URL 请求（由原生客户端通过系统浏览器打开）
+    IPC.send(IPC.MessageType.OPEN_URL, { url: url });
+    
+    // 在 WebView 中直接通过 window.open 打开（降级方案）
+    window.open(url, '_blank');
+    
+    showNotification(`正在打开: ${url}`, 'info');
+}
+
 // === 应用初始化 ===
 document.addEventListener('DOMContentLoaded', async function () {
-    console.log('Chrono-shift 客户端 v0.1.0');
+    console.log('Chrono-shift 客户端 v0.1.0 — 墨竹');
     
     // 尝试恢复会话
     if (Auth.restoreSession()) {

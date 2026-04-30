@@ -87,6 +87,15 @@ debug-cli: $(BUILDDIR)
 	$(CC) $(CFLAGS) $(DEBUG_CLI_SRC) -o $(DEBUG_CLI) $(LDFLAGS)
 	@echo "=== Debug CLI build complete: $(DEBUG_CLI) ==="
 
+# ---- 压力测试工具 ----
+STRESS_TEST_SRC := $(TOOLDIR)/stress_test.c
+STRESS_TEST     := $(BUILDDIR)/stress_test
+
+# 编译压力测试
+stress-test: $(BUILDDIR)
+	$(CC) $(CFLAGS) $(STRESS_TEST_SRC) -o $(STRESS_TEST) $(LDFLAGS)
+	@echo "=== Stress test build complete: $(STRESS_TEST) ==="
+
 # 仅清理构建产物
 clean-build:
 	rm -rf $(BUILDDIR)

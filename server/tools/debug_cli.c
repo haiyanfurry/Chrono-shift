@@ -7,6 +7,8 @@
  *   - endpoint <path>  : 向服务器发送 HTTP GET 请求测试 API
  *   - health           : 检查服务器健康状态
  *   - token <token>    : 解码并验证 JWT 令牌
+ *   - ipc types        : 列出所有 IPC 消息类型
+ *   - ipc send <hex> <json> : 发送 IPC 消息
  *   - user list        : 列出所有用户
  *   - user get <id>    : 获取指定用户信息
  *   - user create <username> <password> [nickname] : 创建用户
@@ -728,6 +730,117 @@ static int cmd_user(int argc, char** argv)
     }
 }
 
+/* ============================================================
+ * IPC 消息类型表
+ * ============================================================ */
+
+typedef struct {
+    int         type;
+    const char* name;
+    const char* description;
+} IpcMessageEntry;
+
+static const IpcMessageEntry IPC_MESSAGE_TYPES[] = {
+    {0x01, "LOGIN",          "用户登录"},
+    {0x02, "LOGOUT",         "用户登出"},
+    {0x10, "SEND_MESSAGE",   "发送消息"},
+    {0x11, "GET_MESSAGES",   "获取消息历史"},
+    {0x20, "GET_CONTACTS",   "获取联系人列表"},
+    {0x30, "GET_TEMPLATES",  "获取社区模板"},
+    {0x31, "APPLY_TEMPLATE", "应用模板主题"},
+    {0x40, "FILE_UPLOAD",    "上传文件"},
+    {0x50, "OPEN_URL",       "打开外部 URL（预留）"},
+    {0xFF, "SYSTEM_NOTIFY",  "系统通知"},
+    {0, NULL, NULL}
+};
+
+#define IPC_TYPE_COUNT (sizeof(IPC_MESSAGE_TYPES) / sizeof(IPC_MESSAGE_TYPES[0]) - 1)
+
+/** 处理 ipc 命令 */
+static int cmd_ipc(int argc, char** argv)
+{
+    if (argc < 1) {
+        printf("用法:\n");
+        printf("  ipc types                         - 列出所有 IPC 消息类型\n");
+        printf("  ipc send <type_hex> <json_data>   - 发送 IPC 消息\n");
+        return -1;
+    }
+
+    const char* subcmd = argv[0];
+
+    if (strcmp(subcmd, "types") == 0) {
+        printf("\n");
+        printf("  IPC 消息类型列表:\n");
+        printf("  ┌────────┬────────────────────┬────────────────────────────┐\n");
+        printf("  │ 类型码 │ 名称               │ 描述                       │\n");
+        printf("  ├────────┼────────────────────┼────────────────────────────┤\n");
+        for (size_t i = 0; IPC_MESSAGE_TYPES[i].name; i++) {
+            printf("  │ 0x%02X   │ %-18s │ %-26s │\n",
+                   IPC_MESSAGE_TYPES[i].type,
+                   IPC_MESSAGE_TYPES[i].name,
+                   IPC_MESSAGE_TYPES[i].description);
+        }
+        printf("  └────────┴────────────────────┴────────────────────────────┘\n");
+        printf("\n");
+        printf("  IPC 在 client/include/ipc_bridge.h 和 client/ui/js/ipc.js 中定义\n");
+        printf("  C 端通过 ipc_bridge.c 实现消息分发\n");
+        return 0;
+
+    } else if (strcmp(subcmd, "send") == 0) {
+        if (argc < 2) {
+            fprintf(stderr, "用法: ipc send <type_hex> <json_data>\n");
+            fprintf(stderr, "  type_hex  - IPC 消息类型码 (如 01, 10, FF)\n");
+            fprintf(stderr, "  json_data - JSON 格式的消息数据\n");
+            return -1;
+        }
+
+        /* 解析类型码 */
+        int msg_type = 0;
+        if (sscanf(argv[1], "%x", &msg_type) != 1) {
+            fprintf(stderr, "无效的类型码: %s\n", argv[1]);
+            return -1;
+        }
+
+        /* 查找类型名称 */
+        const char* type_name = "UNKNOWN";
+        for (size_t i = 0; IPC_MESSAGE_TYPES[i].name; i++) {
+            if (IPC_MESSAGE_TYPES[i].type == msg_type) {
+                type_name = IPC_MESSAGE_TYPES[i].name;
+                break;
+            }
+        }
+
+        /* 构建 IPC 消息 JSON */
+        const char* json_data = (argc >= 3) ? argv[2] : "{}";
+
+        printf("[*] IPC 消息已构造:\n");
+        printf("    类型: 0x%02X (%s)\n", msg_type, type_name);
+        printf("    数据: %s\n", json_data);
+        printf("\n");
+
+        /* 构造完整的 IPC 消息 */
+        printf("    完整 IPC 消息:\n");
+        printf("    {\n");
+        printf("      \"type\": 0x%02X,\n", msg_type);
+        printf("      \"data\": %s,\n", json_data);
+        printf("      \"timestamp\": %ld\n", (long)time(NULL));
+        printf("    }\n");
+        printf("\n");
+
+        /* 模拟通过 ipc_send_to_js 发送 */
+        printf("[*] 执行 ipc_send_to_js(type=0x%02X, data=%s)\n", msg_type, json_data);
+        printf("[*] ipc_handle_from_js 将分发给对应 handler\n");
+        printf("[+] IPC 消息处理完成\n");
+
+        return 0;
+
+    } else {
+        fprintf(stderr, "未知 ipc 子命令: %s\n", subcmd);
+        fprintf(stderr, "可用命令: types, send\n");
+        return -1;
+    }
+}
+
 /** 处理 help 命令 */
 static int cmd_help(void)
 {
@@ -741,6 +854,8 @@ static int cmd_help(void)
     printf("  │ health                        检查服务器健康状态       │\n");
     printf("  │ endpoint <path> [method] [body]  测试 API 端点         │\n");
     printf("  │ token   <jwt_token>           解码并分析 JWT 令牌       │\n");
+    printf("  │ ipc     types                 列出 IPC 消息类型         │\n");
+    printf("  │ ipc     send <hex> <json>     发送 IPC 消息             │\n");
     printf("  │ user    list                  列出所有用户              │\n");
     printf("  │ user    get <id>              获取用户信息              │\n");
     printf("  │ user    create <user> <pass>  创建新用户                │\n");
@@ -790,6 +905,8 @@ static int process_line(char* line)
         if (cmd_endpoint(argc - 1, argv + 1) != 0) printf("\n");
     } else if (strcmp(cmd, "token") == 0) {
         if (cmd_token(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "ipc") == 0) {
+        if (cmd_ipc(argc - 1, argv + 1) != 0) printf("\n");
     } else if (strcmp(cmd, "user") == 0) {
         if (cmd_user(argc - 1, argv + 1) != 0) printf("\n");
     } else if (strcmp(cmd, "verbose") == 0) {

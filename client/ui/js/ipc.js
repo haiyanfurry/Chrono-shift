@@ -17,6 +17,7 @@ IPC.MessageType = {
     GET_TEMPLATES:  0x30,
     APPLY_TEMPLATE: 0x31,
     FILE_UPLOAD:    0x40,
+    OPEN_URL:       0x50,
     SYSTEM_NOTIFY:  0xFF
 };
 

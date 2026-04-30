@@ -1,46 +1,66 @@
 /**
- * Chrono-shift CSS 变量定义
+ * 墨竹 (Chrono-shift) CSS 变量定义 — 现代简约风格
  * 主题系统核心 — 所有颜色和尺寸通过 CSS 变量控制
- * 社区模板通过覆盖这些变量实现主题切换
+ * 靛蓝色系 + 柔和渐变 + 毛玻璃效果
  */
 
 :root {
-    /* === 颜色系统 === */
-    /* 主色调 — 二次元风格的淡紫色/粉色系 */
-    --color-primary: #7C5CFC;
-    --color-primary-hover: #6B4DE6;
-    --color-primary-light: #E8E0FF;
-    --color-primary-bg: #F5F0FF;
+    /* === 颜色系统 — 靛蓝主色调 === */
+    --color-primary: #6366F1;
+    --color-primary-hover: #4F46E5;
+    --color-primary-active: #4338CA;
+    --color-primary-light: #EEF2FF;
+    --color-primary-bg: #F8FAFF;
+    
+    /* 渐变 */
+    --gradient-primary: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+    --gradient-auth: linear-gradient(135deg, #6366F1 0%, #8B5CF6 40%, #F472B6 100%);
+    --gradient-sidebar: linear-gradient(180deg, #F8FAFF 0%, #F1F5F9 100%);
     
     /* 语义色 */
-    --color-success: #52C41A;
-    --color-warning: #FAAD14;
-    --color-error: #FF4D4F;
-    --color-info: #1890FF;
+    --color-success: #10B981;
+    --color-success-bg: #ECFDF5;
+    --color-warning: #F59E0B;
+    --color-warning-bg: #FFFBEB;
+    --color-error: #EF4444;
+    --color-error-bg: #FEF2F2;
+    --color-info: #3B82F6;
+    --color-info-bg: #EFF6FF;
     
     /* 文字色 */
-    --color-text-primary: #1A1A2E;
-    --color-text-secondary: #6B7280;
-    --color-text-tertiary: #9CA3AF;
-    --color-text-placeholder: #B0B8C8;
+    --color-text-primary: #0F172A;
+    --color-text-secondary: #475569;
+    --color-text-tertiary: #94A3B8;
+    --color-text-placeholder: #94A3B8;
     --color-text-inverse: #FFFFFF;
     
-    /* 背景色 — 纯白默认 */
-    --color-bg-primary: #FFFFFF;
-    --color-bg-secondary: #F9FAFB;
-    --color-bg-tertiary: #F3F4F6;
-    --color-bg-hover: #F0F0FF;
-    --color-bg-active: #E8E0FF;
+    /* 背景色 — 柔和灰白 */
+    --color-bg-primary: #FAFAFA;
+    --color-bg-secondary: #F1F5F9;
+    --color-bg-tertiary: #E2E8F0;
+    --color-bg-hover: #F1F0FF;
+    --color-bg-active: #EEF2FF;
+    --color-bg-card: #FFFFFF;
+    
+    /* 毛玻璃效果 */
+    --glass-bg: rgba(255, 255, 255, 0.75);
+    --glass-border: rgba(255, 255, 255, 0.3);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+    --glass-blur: blur(16px);
     
     /* 边框色 */
-    --color-border: #E5E7EB;
-    --color-border-light: #F0F0F0;
-    --color-border-focus: #7C5CFC;
+    --color-border: #E2E8F0;
+    --color-border-light: #F1F5F9;
+    --color-border-focus: #6366F1;
     
-    /* 阴影 */
-    --color-shadow: rgba(124, 92, 252, 0.1);
-    --color-shadow-dark: rgba(0, 0, 0, 0.08);
-    
+    /* 阴影系统 */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 12px rgba(99, 102, 241, 0.10);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.08);
+    --shadow-xl: 0 12px 48px rgba(99, 102, 241, 0.15);
+    --color-shadow: rgba(99, 102, 241, 0.12);
+    --color-shadow-dark: rgba(0, 0, 0, 0.06);
+
     /* === 尺寸系统 === */
     --sidebar-width: 320px;
     --sidebar-collapsed-width: 68px;
@@ -50,10 +70,11 @@
     --border-radius-sm: 6px;
     --border-radius-md: 10px;
     --border-radius-lg: 16px;
+    --border-radius-xl: 24px;
     --border-radius-full: 50%;
     
     /* === 字体 === */
-    --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", 
+    --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
                    "Microsoft YaHei", "Noto Sans SC", sans-serif;
     --font-size-xs: 11px;
     --font-size-sm: 13px;
@@ -62,6 +83,7 @@
     --font-size-lg: 20px;
     --font-size-xl: 24px;
     --font-size-xxl: 32px;
+    --font-size-hero: 42px;
     
     /* === 间距 === */
     --spacing-xs: 4px;
@@ -70,15 +92,38 @@
     --spacing-lg: 16px;
     --spacing-xl: 24px;
     --spacing-xxl: 32px;
+    --spacing-xxxl: 48px;
     
     /* === 过渡动画 === */
-    --transition-fast: 0.15s ease;
-    --transition-normal: 0.25s ease;
-    --transition-slow: 0.4s ease;
+    --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     
     /* === 滚动条 === */
     --scrollbar-width: 6px;
     --scrollbar-track: transparent;
-    --scrollbar-thumb: #D1D5DB;
-    --scrollbar-thumb-hover: #9CA3AF;
+    --scrollbar-thumb: var(--color-bg-tertiary);
+    --scrollbar-thumb-hover: var(--color-text-tertiary);
+    
+    /* === 头像 === */
+    --avatar-border: 2px solid var(--color-border-light);
+    --avatar-size: 40px;
+    --avatar-size-lg: 56px;
+    --avatar-online-dot: #10B981;
+    --avatar-offline-dot: #94A3B8;
+    
+    /* === 聊天气泡 === */
+    --bubble-self-bg: var(--gradient-primary);
+    --bubble-self-text: #FFFFFF;
+    --bubble-other-bg: var(--color-bg-tertiary);
+    --bubble-other-text: var(--color-text-primary);
+    --bubble-radius-self: 18px 18px 4px 18px;
+    --bubble-radius-other: 18px 18px 18px 4px;
+    
+    /* === 侧边栏 === */
+    --sidebar-bg: var(--color-bg-primary);
+    --sidebar-item-hover: var(--color-bg-hover);
+    --sidebar-item-active: var(--color-bg-active);
+    --sidebar-indicator-color: var(--color-primary);
 }
