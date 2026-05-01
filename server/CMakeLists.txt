@@ -128,7 +128,7 @@ if(WIN32)
 endif()
 
 # ============================================================
-# 单元测试 (Unity 框架)
+# 单元测试 (Unity 框架) — C 测试
 # ============================================================
 add_executable(chrono-test
     tests/test_runner.c
@@ -143,16 +143,39 @@ target_compile_options(chrono-test PRIVATE -Wall -Wextra -pedantic)
 target_link_libraries(chrono-test PRIVATE m)
 
 # ============================================================
+# 单元测试 — C++ 安全模块测试
+# ============================================================
+add_executable(chrono-cpp-test
+    tests/test_security.cpp
+    src/security/SecurityManager.cpp
+    src/util/StringUtils.cpp
+    src/util/Logger.cpp
+)
+target_include_directories(chrono-cpp-test PRIVATE src include tests)
+target_compile_definitions(chrono-cpp-test PRIVATE UNIT_TESTING)
+target_compile_options(chrono-cpp-test PRIVATE -Wall -Wextra -pedantic)
+
+if(WIN32)
+    # Windows: 不需要额外的库
+else()
+    target_link_libraries(chrono-cpp-test PRIVATE m)
+    find_package(Threads REQUIRED)
+    target_link_libraries(chrono-cpp-test PRIVATE Threads::Threads)
+endif()
+
+# ============================================================
 # 编译选项
 # ============================================================
 if(MSVC)
     target_compile_options(chrono-server-cpp PRIVATE /W4)
     target_compile_options(chrono-server PRIVATE /W4)
     target_compile_options(debug_cli PRIVATE /W4)
+    target_compile_options(chrono-cpp-test PRIVATE /W4)
 else()
     target_compile_options(chrono-server-cpp PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(chrono-server PRIVATE -Wall -Wextra -pedantic)
     target_compile_options(debug_cli PRIVATE -Wall -Wextra -pedantic)
+    target_compile_options(chrono-cpp-test PRIVATE -Wall -Wextra -pedantic)
 endif()
 
 message(STATUS "C++ server target: chrono-server-cpp")

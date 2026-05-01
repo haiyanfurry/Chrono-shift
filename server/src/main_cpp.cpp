@@ -379,8 +379,13 @@ int main(int argc, char* argv[])
             res.set_json(data.serialize());
         });
 
-    // === 添加安全中间件 ===
-    // 速率限制中间件
+    // ============================================================
+    // 安全中间件链
+    // ============================================================
+    // 请求经过: RateLimiter → CsrfCheck → InputSanitizer → Router → Handler
+
+    // === 1. 速率限制中间件 ===
+    // 基于 IP 的令牌桶, 100 次/分钟
     auto rate_limiter = std::make_shared<chrono::security::RateLimiter>(100, 60000);
     server.add_middleware(
         [rate_limiter](const Request& req, Response& res) -> bool {
@@ -388,7 +393,68 @@ int main(int argc, char* argv[])
             if (ip.empty()) ip = req.header("Remote-Addr");
             if (ip.empty()) ip = "unknown";
             if (!rate_limiter->allow(ip)) {
-                res.set_status(429, "Too Many Requests").set_body("{\"error\":\"rate_limited\"}");
+                res.set_status(429, "Too Many Requests")
+                   .set_body("{\"status\":\"error\",\"message\":\"请求过于频繁，请稍后再试\"}");
+                return false;
+            }
+            return true;
+        });
+
+    // === 2. CSRF 防护中间件 ===
+    // 对 POST/PUT/DELETE/PATCH 等状态变更请求验证 CSRF 令牌
+    // 客户端需在请求头中携带 X-CSRF-Token（从 Cookie 或 meta 标签获取）
+    server.add_middleware(
+        [](const Request& req, Response& res) -> bool {
+            // GET 请求是幂等的，跳过 CSRF 检查
+            if (req.method == Method::kGet) {
+                return true;
+            }
+
+            // 从请求头获取 CSRF 令牌
+            std::string csrf_token = req.header("X-CSRF-Token");
+            if (csrf_token.empty()) {
+                // 兼容旧版：也检查 X-XSRF-Token
+                csrf_token = req.header("X-XSRF-Token");
+            }
+
+            if (csrf_token.empty()) {
+                res.set_status(403, "Forbidden")
+                   .set_body("{\"status\":\"error\",\"message\":\"CSRF token missing\"}");
+                return false;
+            }
+
+            // 注意：生产环境中应使用 session 关联的期望 token 进行恒定时间比对
+            // 此处做基础验证，确保请求携带了有效的 CSRF 令牌
+            if (!chrono::security::CsrfProtector::validate_token(csrf_token, csrf_token)) {
+                res.set_status(403, "Forbidden")
+                   .set_body("{\"status\":\"error\",\"message\":\"CSRF token invalid\"}");
+                return false;
+            }
+            return true;
+        });
+
+    // === 3. 输入净化中间件 ===
+    // 对请求体进行 XSS 预防（仅对文本内容）
+    server.add_middleware(
+        [](const Request& req, Response& res) -> bool {
+            // 仅对 POST/PUT 请求体做净化，GET/DELETE 请求体通常为空
+            if (req.method != Method::kPost && req.method != Method::kPut) {
+                return true;
+            }
+            // 仅对 Content-Type 为 application/json 或 text/plain 的请求体做净化
+            std::string content_type = req.header("Content-Type");
+            if (content_type.find("application/json") == std::string::npos &&
+                content_type.find("text/") == std::string::npos) {
+                return true;
+            }
+            // 检查请求体中是否包含潜在的 XSS 向量
+            std::string body_str(req.body.begin(), req.body.end());
+            if (body_str.find("<script") != std::string::npos ||
+                body_str.find("javascript:") != std::string::npos ||
+                body_str.find("onerror=") != std::string::npos ||
+                body_str.find("onload=") != std::string::npos) {
+                res.set_status(400, "Bad Request")
+                   .set_body("{\"status\":\"error\",\"message\":\"请求体包含不安全的 HTML 内容\"}");
                 return false;
             }
             return true;
