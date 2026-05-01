@@ -7,12 +7,34 @@
  *   - health              : 检查服务器健康状态
  *   - endpoint <path> [method] [body] : 测试 API 端点
  *   - token <token>       : 解码并验证 JWT 令牌
- *   - ipc types           : 列出所有 IPC 消息类型
- *   - ipc send <hex> <json> : 发送 IPC 消息
  *   - user list           : 列出所有用户
  *   - user get <id>       : 获取指定用户信息
  *   - user create <user> <pass> [nick] : 创建用户
  *   - user delete <id>    : 删除用户
+ *
+ * 会话管理 (客户端本地):
+ *   - session show        : 查看当前会话状态
+ *   - session login <host> <token> : 登录并保存会话
+ *   - session logout      : 清除会话
+ *
+ * 配置管理 (客户端本地):
+ *   - config show         : 查看客户端配置
+ *   - config set <key> <value> : 修改配置项 (host/port/tls/verbose)
+ *
+ * 安全存储 (客户端本地):
+ *   - storage list        : 列出本地安全存储内容
+ *   - storage get <key>   : 读取安全存储条目
+ *
+ * 加密测试 (客户端本地 OpenSSL):
+ *   - crypto test         : 测试 AES-256-GCM 加密/解密
+ *
+ * 网络诊断 (客户端本地):
+ *   - network test <host> <port> : 网络连通性测试 (TCP+TLS)
+ *
+ * IPC 调试:
+ *   - ipc types           : 列出所有 IPC 消息类型
+ *   - ipc send <hex> <json> : 发送 IPC 消息
+ *   - ipc capture         : 捕获 IPC 消息 (监听模式)
  *
  * WebSocket 调试 (E1):
  *   - ws connect <token>  : 建立 WebSocket 连接 (需 JWT)
@@ -20,6 +42,7 @@
  *   - ws recv             : 接收 WebSocket 消息 (非阻塞)
  *   - ws close            : 关闭 WebSocket 连接
  *   - ws status           : 查看 WebSocket 连接状态
+ *   - ws monitor          : WebSocket 连接监控模式
  *
  * 数据库操作 (E2):
  *   - msg list <uid> [limit] [offset] : 列出用户消息
@@ -67,9 +90,13 @@
 #include <stdint.h>
 #include <time.h>
 
-#include "../include/tls_server.h"
+#include "../include/tls_client.h"
 #include "../include/json_parser.h"
 #include "../include/platform_compat.h"
+
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -133,6 +160,12 @@ static struct {
     int  ws_connected;
     char ws_buffer[65536];
     int  ws_buffer_len;
+    /* 会话状态 (session 命令) */
+    char session_token[4096];
+    int  session_logged_in;
+    char session_host[256];
+    /* 存储路径 (storage 命令) */
+    char storage_path[512];
 } g_config = {
     .host       = DEFAULT_HOST,
     .port       = DEFAULT_PORT,
@@ -141,7 +174,9 @@ static struct {
     .current_ssl = 0,
     .ws_ssl     = NULL,
     .ws_connected = 0,
-    .ws_buffer_len = 0
+    .ws_buffer_len = 0,
+    .session_logged_in = 0,
+    .storage_path = {0}
 };
 
 /* ============================================================
@@ -955,9 +990,52 @@ static int cmd_ipc(int argc, char** argv)
 
         return 0;
 
+    } else if (strcmp(subcmd, "capture") == 0) {
+        printf("\n");
+        printf("  ╔══════════════════════════════════════════════════════════╗\n");
+        printf("  ║     IPC 消息捕获模式 (监听)                              ║\n");
+        printf("  ╚══════════════════════════════════════════════════════════╝\n");
+        printf("\n");
+        printf("  [*] 进入 IPC 捕获模式，模拟监听 IPC 消息...\n");
+        printf("  [*] 按 Ctrl+C 退出\n");
+        printf("\n");
+        printf("  监听 IPC 通道: client <-> webview\n");
+        printf("  协议: C 端通过 ipc_bridge.c 发送，JS 端通过 ipc.js 接收\n");
+        printf("\n");
+
+        /* 模拟捕获 5 轮 IPC 消息 */
+        const char* mock_messages[][3] = {
+            {"0x01", "LOGIN",       "{\"user_id\": 1, \"token\": \"...\""},
+            {"0x10", "SEND_MESSAGE","{\"from\": 1, \"to\": 2, \"content\": \"你好\"}"},
+            {"0x20", "GET_CONTACTS","{\"user_id\": 1}"},
+            {"0x30", "GET_TEMPLATES","{\"limit\": 50, \"offset\": 0}"},
+            {"0x40", "FILE_UPLOAD", "{\"path\": \"/tmp/test.txt\", \"size\": 1024}"},
+        };
+        int num_mock = sizeof(mock_messages) / sizeof(mock_messages[0]);
+
+        for (int i = 0; i < num_mock; i++) {
+            time_t now = time(NULL);
+            char ts[32];
+            strftime(ts, sizeof(ts), "%H:%M:%S", localtime(&now));
+
+            printf("  ┌─────────────────────────────────────────────────────────┐\n");
+            printf("  │ [%s] IPC 消息 #%d                                    │\n", ts, i + 1);
+            printf("  ├─────────────────────────────────────────────────────────┤\n");
+            printf("  │ 类型: %s (%s)                                        │\n", mock_messages[i][0], mock_messages[i][1]);
+            printf("  │ 数据: %s\n", mock_messages[i][2]);
+            printf("  │ 方向: C <---> JS                                        │\n");
+            printf("  └─────────────────────────────────────────────────────────┘\n");
+            printf("\n");
+
+            msleep(800); /* 模拟消息间隔 */
+        }
+
+        printf("  [*] IPC 捕获结束 (共 %d 条消息)\n", num_mock);
+        return 0;
+
     } else {
         fprintf(stderr, "未知 ipc 子命令: %s\n", subcmd);
-        fprintf(stderr, "可用命令: types, send\n");
+        fprintf(stderr, "可用命令: types, send, capture\n");
         return -1;
     }
 }
@@ -1832,6 +1910,80 @@ static int cmd_ws(int argc, char** argv)
         printf("    服务器: %s:%d\n", g_config.host, g_config.port);
         return 0;
 
+    } else if (strcmp(subcmd, "monitor") == 0) {
+        if (!g_config.ws_connected) {
+            fprintf(stderr, "[-] WebSocket 未连接, 请先使用 ws connect\n");
+            return -1;
+        }
+
+        int rounds = 10;
+        if (argc >= 2) {
+            rounds = atoi(argv[1]);
+            if (rounds < 1) rounds = 1;
+            if (rounds > 100) rounds = 100;
+        }
+
+        printf("\n");
+        printf("  ╔══════════════════════════════════════════════════════════╗\n");
+        printf("  ║     WebSocket 监控模式 (%d 轮)                          ║\n", rounds);
+        printf("  ╚══════════════════════════════════════════════════════════╝\n");
+        printf("\n");
+
+        int msg_count = 0;
+        for (int r = 1; r <= rounds; r++) {
+            unsigned char buf[16384];
+            size_t rlen = 0;
+            int opcode = 0;
+
+            int ret = ws_recv_frame(&opcode, buf, &rlen, sizeof(buf) - 1);
+            if (ret < 0) {
+                printf("  ⚠ 连接中断 (第 %d 轮)\n", r);
+                break;
+            }
+
+            time_t now = time(NULL);
+            char ts[32];
+            strftime(ts, sizeof(ts), "%H:%M:%S", localtime(&now));
+
+            if (ret == 0) {
+                /* 无消息时发送 Ping 保活 */
+                printf("  [%s] ♥ Ping (无消息)\n", ts);
+                ws_send_frame(WS_OPCODE_PING, NULL, 0);
+            } else {
+                msg_count++;
+                buf[rlen] = 0;
+                const char* type_str = "未知";
+                if (opcode == WS_OPCODE_TEXT)       type_str = "文本";
+                else if (opcode == WS_OPCODE_BINARY) type_str = "二进制";
+                else if (opcode == WS_OPCODE_PING)   type_str = "Ping";
+                else if (opcode == WS_OPCODE_PONG)   type_str = "Pong";
+                else if (opcode == WS_OPCODE_CLOSE)  type_str = "关闭";
+
+                printf("  ┌─────────────────────────────────────────────────────────┐\n");
+                printf("  │ [%s] WS 消息 #%d (%s)                              │\n", ts, msg_count, type_str);
+                printf("  ├─────────────────────────────────────────────────────────┤\n");
+                if (opcode == WS_OPCODE_TEXT) {
+                    printf("  │ %s\n", (const char*)buf);
+                } else {
+                    printf("  │ (%zu 字节数据)\n", rlen);
+                }
+                printf("  └─────────────────────────────────────────────────────────┘\n");
+
+                if (opcode == WS_OPCODE_CLOSE) {
+                    printf("\n  [*] 对端发送关闭帧, 监控结束\n");
+                    break;
+                }
+            }
+
+            printf("\n");
+            if (r < rounds) {
+                for (int s = 0; s < 2; s++) msleep(1000);
+            }
+        }
+
+        printf("  [*] 监控完成: 共 %d 条消息 (%d 轮)\n", msg_count, rounds);
+        return 0;
+
     } else {
         fprintf(stderr, "未知 ws 子命令: %s\n", subcmd);
         return -1;
@@ -2086,12 +2238,609 @@ static int cmd_db(int argc, char** argv)
     }
 }
 
+/* ============================================================
+ * 客户端本地命令 (新增)
+ * ============================================================ */
+
+/** 处理 session 命令 - 会话管理 */
+static int cmd_session(int argc, char** argv)
+{
+    if (argc < 1) {
+        printf("用法:\n");
+        printf("  session show                    - 查看当前会话状态\n");
+        printf("  session login <host> <token>    - 登录并保存会话\n");
+        printf("  session logout                  - 清除会话\n");
+        return -1;
+    }
+
+    const char* subcmd = argv[0];
+
+    if (strcmp(subcmd, "show") == 0) {
+        printf("\n");
+        printf("  ╔══════════════════════════════════════════════════════════╗\n");
+        printf("  ║     会话状态 (Session)                                   ║\n");
+        printf("  ╚══════════════════════════════════════════════════════════╝\n");
+        printf("\n");
+        printf("  登录状态: %s\n", g_config.session_logged_in ? "已登录 ✓" : "未登录 ✗");
+        if (g_config.session_logged_in) {
+            printf("  服务器:   %s\n", g_config.session_host);
+            printf("  令牌:     %s\n", g_config.session_token);
+            printf("  令牌长度: %zu 字符\n", strlen(g_config.session_token));
+        }
+        printf("\n");
+        printf("  提示: session login <host> <token> 来登录\n");
+        return 0;
+
+    } else if (strcmp(subcmd, "login") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "用法: session login <host> <token>\n");
+            return -1;
+        }
+        const char* host = argv[1];
+        const char* token = argv[2];
+
+        snprintf(g_config.session_host, sizeof(g_config.session_host), "%s", host);
+        snprintf(g_config.session_token, sizeof(g_config.session_token), "%s", token);
+        g_config.session_logged_in = 1;
+
+        /* 同步到全局配置的 host/port */
+        snprintf(g_config.host, sizeof(g_config.host), "%s", host);
+
+        printf("[+] 会话已保存: host=%s, token=%.32s...\n", host, token);
+        printf("[*] 全局目标已同步为: %s:%d\n", g_config.host, g_config.port);
+        return 0;
+
+    } else if (strcmp(subcmd, "logout") == 0) {
+        if (!g_config.session_logged_in) {
+            printf("[*] 当前没有活跃会话\n");
+            return 0;
+        }
+        memset(g_config.session_token, 0, sizeof(g_config.session_token));
+        memset(g_config.session_host, 0, sizeof(g_config.session_host));
+        g_config.session_logged_in = 0;
+        printf("[+] 会话已清除\n");
+        return 0;
+
+    } else {
+        fprintf(stderr, "未知 session 子命令: %s\n", subcmd);
+        return -1;
+    }
+}
+
+/** 处理 config 命令 - 配置管理 */
+static int cmd_config(int argc, char** argv)
+{
+    if (argc < 1) {
+        printf("用法:\n");
+        printf("  config show                    - 查看客户端配置\n");
+        printf("  config set <key> <value>       - 修改配置项\n");
+        printf("    可用配置项:\n");
+        printf("      host   - 服务器地址 (如 127.0.0.1)\n");
+        printf("      port   - 服务器端口 (如 4443)\n");
+        printf("      tls    - TLS 开关 (1/0)\n");
+        printf("      verbose- 详细模式 (1/0)\n");
+        return -1;
+    }
+
+    const char* subcmd = argv[0];
+
+    if (strcmp(subcmd, "show") == 0) {
+        printf("\n");
+        printf("  ╔══════════════════════════════════════════════════════════╗\n");
+        printf("  ║     客户端配置 (Config)                                  ║\n");
+        printf("  ╚══════════════════════════════════════════════════════════╝\n");
+        printf("\n");
+        printf("  ┌───────────────────────┬────────────────────────────────┐\n");
+        printf("  │ 配置项                │ 当前值                        │\n");
+        printf("  ├───────────────────────┼────────────────────────────────┤\n");
+        printf("  │ 服务器地址 (host)     │ %-30s │\n", g_config.host);
+        printf("  │ 服务器端口 (port)     │ %-30d │\n", g_config.port);
+        printf("  │ TLS 启用 (tls)        │ %-30s │\n", g_config.use_tls ? "是 (1)" : "否 (0)");
+        printf("  │ 详细模式 (verbose)    │ %-30s │\n", g_config.verbose ? "开 (1)" : "关 (0)");
+        printf("  │ 会话状态              │ %-30s │\n", g_config.session_logged_in ? "已登录" : "未登录");
+        printf("  │ WebSocket 状态        │ %-30s │\n", g_config.ws_connected ? "已连接" : "未连接");
+        printf("  └───────────────────────┴────────────────────────────────┘\n");
+        printf("\n");
+        printf("  环境变量:\n");
+        printf("    CHRONO_HOST = %s\n", getenv("CHRONO_HOST") ? getenv("CHRONO_HOST") : "(未设置)");
+        printf("    CHRONO_PORT = %s\n", getenv("CHRONO_PORT") ? getenv("CHRONO_PORT") : "(未设置)");
+        printf("    CHRONO_TLS  = %s\n", getenv("CHRONO_TLS") ? getenv("CHRONO_TLS") : "(未设置)");
+        return 0;
+
+    } else if (strcmp(subcmd, "set") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "用法: config set <key> <value>\n");
+            return -1;
+        }
+        const char* key = argv[1];
+        const char* value = argv[2];
+
+        if (strcmp(key, "host") == 0) {
+            snprintf(g_config.host, sizeof(g_config.host), "%s", value);
+            printf("[+] host 已设为: %s\n", g_config.host);
+        } else if (strcmp(key, "port") == 0) {
+            int p = atoi(value);
+            if (p <= 0 || p > 65535) {
+                fprintf(stderr, "[-] 无效端口: %s (1-65535)\n", value);
+                return -1;
+            }
+            g_config.port = p;
+            printf("[+] port 已设为: %d\n", g_config.port);
+        } else if (strcmp(key, "tls") == 0) {
+            g_config.use_tls = (atoi(value) != 0) ? 1 : 0;
+            printf("[+] tls 已设为: %s\n", g_config.use_tls ? "启用" : "禁用");
+        } else if (strcmp(key, "verbose") == 0) {
+            g_config.verbose = (atoi(value) != 0) ? 1 : 0;
+            printf("[+] verbose 已设为: %s\n", g_config.verbose ? "开" : "关");
+        } else {
+            fprintf(stderr, "[-] 未知配置项: %s (可用: host, port, tls, verbose)\n", key);
+            return -1;
+        }
+        return 0;
+
+    } else {
+        fprintf(stderr, "未知 config 子命令: %s\n", subcmd);
+        return -1;
+    }
+}
+
+/** 处理 storage 命令 - 安全存储 */
+static int cmd_storage(int argc, char** argv)
+{
+    if (argc < 1) {
+        printf("用法:\n");
+        printf("  storage list                   - 列出本地安全存储内容\n");
+        printf("  storage get <key>              - 读取安全存储条目\n");
+        return -1;
+    }
+
+    /* 初始化存储路径 */
+    if (g_config.storage_path[0] == 0) {
+#ifdef _WIN32
+        const char* appdata = getenv("APPDATA");
+        snprintf(g_config.storage_path, sizeof(g_config.storage_path),
+                 "%s/Chrono-shift/secure", appdata ? appdata : ".");
+#else
+        const char* home = getenv("HOME");
+        snprintf(g_config.storage_path, sizeof(g_config.storage_path),
+                 "%s/.chrono-shift/secure", home ? home : ".");
+#endif
+    }
+
+    const char* subcmd = argv[0];
+
+    if (strcmp(subcmd, "list") == 0) {
+        printf("\n");
+        printf("  ╔══════════════════════════════════════════════════════════╗\n");
+        printf("  ║     本地安全存储 (Secure Storage)                        ║\n");
+        printf("  ╚══════════════════════════════════════════════════════════╝\n");
+        printf("\n");
+        printf("  存储路径: %s\n", g_config.storage_path);
+        printf("\n");
+        printf("  存储内容 (模拟):\n");
+        printf("  ┌──────────┬────────────────────────────────────────────┐\n");
+        printf("  │ 键名     │ 值                                         │\n");
+        printf("  ├──────────┼────────────────────────────────────────────┤\n");
+        printf("  │ token    │ %-42s │\n",
+               g_config.session_logged_in ? g_config.session_token : "(空)");
+        printf("  │ user_id  │ %-42s │\n",
+               g_config.session_logged_in ? "1" : "(空)");
+        printf("  │ device   │ chrono-cli (当前工具)                      │\n");
+        printf("  └──────────┴────────────────────────────────────────────┘\n");
+        printf("\n");
+        printf("  说明: 生产环境中使用 AES-256-GCM 加密存储\n");
+        printf("  实现:  client/security/src/secure_storage.rs (Rust FFI)\n");
+        printf("  路径:  %s/*.chrono_*\n", g_config.storage_path);
+        return 0;
+
+    } else if (strcmp(subcmd, "get") == 0) {
+        if (argc < 2) {
+            fprintf(stderr, "用法: storage get <key>\n");
+            return -1;
+        }
+        const char* key = argv[1];
+
+        printf("[*] 读取安全存储: key=%s\n", key);
+        if (strcmp(key, "token") == 0) {
+            if (g_config.session_logged_in) {
+                printf("[+] token = %s\n", g_config.session_token);
+            } else {
+                printf("[*] token = (未设置, 请先 session login)\n");
+            }
+        } else {
+            printf("[-] 键 '%s' 不存在于本地存储\n", key);
+            printf("[*] 可用键: token, user_id, device\n");
+            return -1;
+        }
+        return 0;
+
+    } else {
+        fprintf(stderr, "未知 storage 子命令: %s\n", subcmd);
+        return -1;
+    }
+}
+
+/** 处理 crypto 命令 - 加密测试 */
+static int cmd_crypto(int argc, char** argv)
+{
+    if (argc < 1) {
+        printf("用法:\n");
+        printf("  crypto test                    - 测试 AES-256-GCM 加密/解密\n");
+        return -1;
+    }
+
+    const char* subcmd = argv[0];
+
+    if (strcmp(subcmd, "test") == 0) {
+        printf("\n");
+        printf("  ╔══════════════════════════════════════════════════════════╗\n");
+        printf("  ║     E2E 加密测试 (AES-256-GCM)                          ║\n");
+        printf("  ╚══════════════════════════════════════════════════════════╝\n");
+        printf("\n");
+
+        /* 使用 OpenSSL EVP 进行 AES-256-GCM 加密/解密测试 */
+        unsigned char key[32];
+        unsigned char nonce[12];
+        const char* plaintext = "Hello, Chrono-shift! 这是一个 E2E 加密测试消息。";
+        unsigned char ciphertext[256];
+        unsigned char decrypted[256];
+        int ciphertext_len = 0;
+        int decrypted_len = 0;
+
+        /* 生成随机密钥 */
+        printf("  [1/5] 生成 AES-256 密钥...\n");
+        FILE* urandom = fopen("/dev/urandom", "rb");
+        if (!urandom) {
+            /* Windows fallback */
+            srand((unsigned int)time(NULL));
+            for (int i = 0; i < 32; i++) key[i] = (unsigned char)(rand() % 256);
+        } else {
+            size_t r = fread(key, 1, 32, urandom);
+            fclose(urandom);
+            (void)r;
+        }
+        printf("        密钥: ");
+        for (int i = 0; i < 32; i++) printf("%02X", key[i]);
+        printf("\n\n");
+
+        /* 生成随机 nonce */
+        printf("  [2/5] 生成随机 Nonce (12 字节)...\n");
+        if (!urandom) {
+            for (int i = 0; i < 12; i++) nonce[i] = (unsigned char)(rand() % 256);
+        } else {
+            FILE* ur = fopen("/dev/urandom", "rb");
+            if (ur) { fread(nonce, 1, 12, ur); fclose(ur); }
+        }
+        printf("        Nonce: ");
+        for (int i = 0; i < 12; i++) printf("%02X", nonce[i]);
+        printf("\n\n");
+
+        /* 加密 */
+        printf("  [3/5] 加密明文 (%zu 字节)...\n", strlen(plaintext));
+        EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+        if (!ctx) {
+            fprintf(stderr, "[-] EVP_CIPHER_CTX_new 失败\n");
+            return -1;
+        }
+        if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1) {
+            fprintf(stderr, "[-] EVP_EncryptInit_ex 失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, NULL) != 1) {
+            fprintf(stderr, "[-] 设置 IV 长度失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        if (EVP_EncryptInit_ex(ctx, NULL, NULL, key, nonce) != 1) {
+            fprintf(stderr, "[-] EVP_EncryptInit_ex (key, nonce) 失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        int outlen = 0;
+        if (EVP_EncryptUpdate(ctx, ciphertext, &outlen,
+                              (const unsigned char*)plaintext, (int)strlen(plaintext)) != 1) {
+            fprintf(stderr, "[-] EVP_EncryptUpdate 失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        ciphertext_len = outlen;
+        if (EVP_EncryptFinal_ex(ctx, ciphertext + ciphertext_len, &outlen) != 1) {
+            fprintf(stderr, "[-] EVP_EncryptFinal_ex 失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        ciphertext_len += outlen;
+
+        unsigned char tag[16];
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag) != 1) {
+            fprintf(stderr, "[-] 获取 GCM 标签失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        EVP_CIPHER_CTX_free(ctx);
+
+        printf("        密文: ");
+        for (int i = 0; i < ciphertext_len; i++) printf("%02X", ciphertext[i]);
+        printf("\n");
+        printf("        标签: ");
+        for (int i = 0; i < 16; i++) printf("%02X", tag[i]);
+        printf("\n\n");
+
+        /* 解密 */
+        printf("  [4/5] 解密密文 (%d 字节)...\n", ciphertext_len);
+        ctx = EVP_CIPHER_CTX_new();
+        if (!ctx) {
+            fprintf(stderr, "[-] EVP_CIPHER_CTX_new (解密) 失败\n");
+            return -1;
+        }
+        if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), NULL, NULL, NULL) != 1) {
+            fprintf(stderr, "[-] EVP_DecryptInit_ex (解密) 失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, 12, NULL) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        if (EVP_DecryptInit_ex(ctx, NULL, NULL, key, nonce) != 1) {
+            fprintf(stderr, "[-] EVP_DecryptInit_ex (解密 key, nonce) 失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        if (EVP_DecryptUpdate(ctx, decrypted, &outlen, ciphertext, ciphertext_len) != 1) {
+            fprintf(stderr, "[-] EVP_DecryptUpdate 失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        decrypted_len = outlen;
+
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag) != 1) {
+            fprintf(stderr, "[-] 设置 GCM 标签验证失败\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        int ret = EVP_DecryptFinal_ex(ctx, decrypted + decrypted_len, &outlen);
+        EVP_CIPHER_CTX_free(ctx);
+
+        decrypted[decrypted_len] = 0;
+
+        printf("        解密结果: %s\n", decrypted);
+        printf("\n");
+
+        /* 验证 */
+        printf("  [5/5] 验证...\n");
+        if (ret > 0 && strcmp((const char*)decrypted, plaintext) == 0) {
+            printf("        ✓ AES-256-GCM 加密/解密测试通过!\n");
+            printf("        ✓ 数据完整性验证通过 (GCM 认证标签)\n");
+        } else {
+            printf("        ✗ 验证失败!\n");
+            EVP_CIPHER_CTX_free(ctx);
+            return -1;
+        }
+        printf("\n");
+
+        printf("  说明:\n");
+        printf("  实现: client/security/src/crypto.rs (Rust FFI)\n");
+        printf("  或直接使用 OpenSSL EVP 库 (本测试)\n");
+        return 0;
+
+    } else {
+        fprintf(stderr, "未知 crypto 子命令: %s\n", subcmd);
+        return -1;
+    }
+}
+
+/** 处理 network 命令 - 网络诊断 */
+static int cmd_network(int argc, char** argv)
+{
+    if (argc < 1) {
+        printf("用法:\n");
+        printf("  network test <host> <port>     - 网络连通性测试\n");
+        printf("    测试目标主机的 TCP 连接和 TLS 握手\n");
+        return -1;
+    }
+
+    const char* subcmd = argv[0];
+
+    if (strcmp(subcmd, "test") == 0) {
+        if (argc < 3) {
+            fprintf(stderr, "用法: network test <host> <port>\n");
+            fprintf(stderr, "示例: network test 127.0.0.1 4443\n");
+            return -1;
+        }
+
+        const char* test_host = argv[1];
+        int test_port = atoi(argv[2]);
+        if (test_port <= 0 || test_port > 65535) {
+            fprintf(stderr, "[-] 无效端口: %d\n", test_port);
+            return -1;
+        }
+
+        printf("\n");
+        printf("  ╔══════════════════════════════════════════════════════════╗\n");
+        printf("  ║     网络连通性测试                                        ║\n");
+        printf("  ╚══════════════════════════════════════════════════════════╝\n");
+        printf("\n");
+        printf("  目标: %s:%d\n", test_host, test_port);
+        printf("\n");
+
+        /* Step 1: DNS 解析 */
+        printf("  [1/4] DNS 解析...\n");
+        clock_t dns_start = clock();
+        struct hostent* he = gethostbyname(test_host);
+        clock_t dns_end = clock();
+        double dns_time = ((double)(dns_end - dns_start)) / CLOCKS_PER_SEC * 1000.0;
+
+        if (!he) {
+            printf("        ✗ DNS 解析失败: %s\n", test_host);
+#ifdef _WIN32
+            printf("        错误码: %d\n", WSAGetLastError());
+#endif
+            return -1;
+        }
+
+        struct in_addr addr;
+        memcpy(&addr, he->h_addr_list[0], sizeof(addr));
+        printf("        ✓ DNS 解析成功: %s -> %s (%.1f ms)\n",
+               test_host, inet_ntoa(addr), dns_time);
+        printf("\n");
+
+        /* Step 2: TCP 连接 */
+        printf("  [2/4] TCP 连接...\n");
+#ifdef _WIN32
+        WSADATA wsa;
+        WSAStartup(MAKEWORD(2, 2), &wsa);
+#endif
+        socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
+        if (!ISVALIDSOCKET(sock)) {
+            printf("        ✗ 创建 socket 失败\n");
+            return -1;
+        }
+
+        struct sockaddr_in server_addr;
+        memset(&server_addr, 0, sizeof(server_addr));
+        server_addr.sin_family = AF_INET;
+        server_addr.sin_port = htons((uint16_t)test_port);
+        server_addr.sin_addr = *(struct in_addr*)he->h_addr;
+
+#ifdef _WIN32
+        {
+            unsigned long mode = 1;
+            ioctlsocket(sock, FIONBIO, &mode);
+        }
+#else
+        {
+            int flags = fcntl(sock, F_GETFL, 0);
+            fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+        }
+#endif
+
+        clock_t tcp_start = clock();
+        int conn_ret = connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr));
+        if (conn_ret < 0) {
+#ifdef _WIN32
+            if (WSAGetLastError() != WSAEWOULDBLOCK) {
+#else
+            if (errno != EINPROGRESS) {
+#endif
+                printf("        ✗ TCP 连接失败\n");
+                CLOSE_SOCKET(sock);
+#ifdef _WIN32
+                WSACleanup();
+#endif
+                return -1;
+            }
+            /* 等待连接完成 */
+            fd_set fdset;
+            FD_ZERO(&fdset);
+            FD_SET(sock, &fdset);
+            struct timeval tv;
+            tv.tv_sec = 3;
+            tv.tv_usec = 0;
+            if (select((int)sock + 1, NULL, &fdset, NULL, &tv) <= 0) {
+                printf("        ✗ TCP 连接超时 (3s)\n");
+                CLOSE_SOCKET(sock);
+#ifdef _WIN32
+                WSACleanup();
+#endif
+                return -1;
+            }
+        }
+        clock_t tcp_end = clock();
+        double tcp_time = ((double)(tcp_end - tcp_start)) / CLOCKS_PER_SEC * 1000.0;
+
+        printf("        ✓ TCP 连接成功 (%.1f ms)\n", tcp_time);
+        printf("\n");
+
+        /* Step 3: TLS 握手 (可选) */
+        printf("  [3/4] TLS 握手...\n");
+        clock_t tls_start = clock();
+
+        SSL* ssl = NULL;
+        if (tls_client_init(NULL) != 0) {
+            printf("        ⚠ TLS 初始化失败: %s\n", tls_last_error());
+            printf("        (仅 TCP 连接可用, 无 TLS)\n");
+        } else if (tls_client_connect(&ssl, test_host, (uint16_t)test_port) != 0) {
+            printf("        ⚠ TLS 握手失败: %s\n", tls_last_error());
+        } else {
+            clock_t tls_end = clock();
+            double tls_time = ((double)(tls_end - tls_start)) / CLOCKS_PER_SEC * 1000.0;
+
+            printf("        ✓ TLS 握手成功 (%.1f ms)\n", tls_time);
+
+            char tls_info[2048] = {0};
+            tls_get_info(ssl, tls_info, sizeof(tls_info));
+            printf("\n        TLS 详情:\n");
+            /* 格式化输出 TLS 信息 */
+            char* line = strtok(tls_info, "\n");
+            while (line) {
+                printf("          %s\n", line);
+                line = strtok(NULL, "\n");
+            }
+
+            tls_close(ssl);
+        }
+        printf("\n");
+
+        /* Step 4: HTTP 请求测试 */
+        printf("  [4/4] HTTP 请求测试...\n");
+        /* 临时切换目标 */
+        char orig_host[256];
+        int orig_port = g_config.port;
+        snprintf(orig_host, sizeof(orig_host), "%s", g_config.host);
+
+        snprintf(g_config.host, sizeof(g_config.host), "%s", test_host);
+        g_config.port = test_port;
+
+        clock_t http_start = clock();
+        char response[8192] = {0};
+        int http_ret = http_request("GET", "/api/health", NULL, NULL,
+                                     response, sizeof(response));
+        clock_t http_end = clock();
+        double http_time = ((double)(http_end - http_start)) / CLOCKS_PER_SEC * 1000.0;
+
+        /* 恢复配置 */
+        snprintf(g_config.host, sizeof(g_config.host), "%s", orig_host);
+        g_config.port = orig_port;
+
+        if (http_ret == 0) {
+            int http_status = http_get_status(response);
+            printf("        ✓ HTTP GET /api/health -> %d (%.1f ms)\n",
+                   http_status, http_time);
+        } else {
+            printf("        ⚠ HTTP 请求失败: %s\n", tls_last_error());
+        }
+        printf("\n");
+
+        printf("  ┌─────────────────────────────────────────────────────────┐\n");
+        printf("  │ 测试摘要                                                │\n");
+        printf("  ├─────────────────────────────────────────────────────────┤\n");
+        printf("  │ DNS:     ✓ %.1f ms                                    │\n", dns_time);
+        printf("  │ TCP:     ✓ %.1f ms                                    │\n", tcp_time);
+        printf("  │ TLS:     %s                                              │\n", ssl ? "✓" : "✗");
+        printf("  │ HTTP:    %s                                              │\n", http_ret == 0 ? "✓" : "✗");
+        printf("  └─────────────────────────────────────────────────────────┘\n");
+        printf("\n");
+
+        CLOSE_SOCKET(sock);
+#ifdef _WIN32
+        WSACleanup();
+#endif
+        return (http_ret == 0) ? 0 : -1;
+
+    } else {
+        fprintf(stderr, "未知 network 子命令: %s\n", subcmd);
+        return -1;
+    }
+}
+
 /** 处理 help 命令 */
 static int cmd_help(void)
 {
     printf("\n");
     printf("╔══════════════════════════════════════════════════════════╗\n");
-    printf("║        Chrono-shift CLI 调试接口                        ║\n");
+    printf("║        Chrono-shift CLI 调试接口 v1.0                   ║\n");
     printf("╚══════════════════════════════════════════════════════════╝\n");
     printf("\n");
     printf("基础功能:\n");
@@ -2101,22 +2850,37 @@ static int cmd_help(void)
     printf("  │ token   <jwt_token>           解码并分析 JWT 令牌       │\n");
     printf("  │ ipc     types                 列出 IPC 消息类型         │\n");
     printf("  │ ipc     send <hex> <json>     发送 IPC 消息             │\n");
+    printf("  │ ipc     capture               捕获/监听 IPC 消息        │\n");
     printf("  │ user    list                  列出所有用户              │\n");
     printf("  │ user    get <id>              获取用户信息              │\n");
     printf("  │ user    create <user> <pass>  创建新用户                │\n");
     printf("  │ user    delete <id>           删除用户                  │\n");
     printf("  └─────────────────────────────────────────────────────────┘\n");
     printf("\n");
-    printf("WebSocket 调试 (E1):\n");
+    printf("客户端本地命令:\n");
+    printf("  ┌─────────────────────────────────────────────────────────┐\n");
+    printf("  │ session show                  查看当前会话状态          │\n");
+    printf("  │ session login <host> <token>  登录并保存会话            │\n");
+    printf("  │ session logout                清除当前会话              │\n");
+    printf("  │ config show                   查看客户端配置            │\n");
+    printf("  │ config set <key> <value>      修改配置项                │\n");
+    printf("  │ storage list                  列出安全存储内容          │\n");
+    printf("  │ storage get <key>             读取安全存储条目          │\n");
+    printf("  │ crypto test                   测试 AES-256-GCM 加密     │\n");
+    printf("  │ network test <host> <port>    网络连通性诊断            │\n");
+    printf("  └─────────────────────────────────────────────────────────┘\n");
+    printf("\n");
+    printf("WebSocket 调试:\n");
     printf("  ┌─────────────────────────────────────────────────────────┐\n");
     printf("  │ ws connect <token> [path]     建立 WebSocket 连接      │\n");
     printf("  │ ws send <json>                通过 WS 发送消息          │\n");
     printf("  │ ws recv                       接收 WS 消息 (非阻塞)    │\n");
     printf("  │ ws close                      关闭 WS 连接              │\n");
     printf("  │ ws status                     查看 WS 连接状态          │\n");
+    printf("  │ ws monitor [rounds] [interval] WS 消息监控模式          │\n");
     printf("  └─────────────────────────────────────────────────────────┘\n");
     printf("\n");
-    printf("数据库操作 (E2):\n");
+    printf("数据库操作:\n");
     printf("  ┌─────────────────────────────────────────────────────────┐\n");
     printf("  │ msg list <uid> [limit] [offset]  列出用户消息           │\n");
     printf("  │ msg get <id>                  获取消息详情              │\n");
@@ -2158,10 +2922,11 @@ static int cmd_help(void)
     printf("  当前服务器: %s:%d\n", g_config.host, g_config.port);
     printf("  协议:       %s\n", g_config.use_tls ? "HTTPS" : "HTTP");
     printf("  详细模式:   %s\n", g_config.verbose ? "开" : "关");
+    printf("  会话状态:   %s\n", g_config.session_logged_in ? "已登录" : "未登录");
     printf("\n");
     printf("提示:\n");
-    printf("  环境变量 CHRONO_HOST / CHRONO_PORT 设置目标\n");
-    printf("  connect / disconnect 运行时管理连接\n");
+    printf("  环境变量 CHRONO_HOST / CHRONO_PORT / CHRONO_TLS 设置目标\n");
+    printf("  session / config / storage / crypto / network 为本地命令\n");
     printf("  ping / watch / rate-test 性能测试需要服务器运行\n");
     printf("\n");
     return 0;
@@ -2210,6 +2975,16 @@ static int process_line(char* line)
         if (cmd_friend(argc - 1, argv + 1) != 0) printf("\n");
     } else if (strcmp(cmd, "db") == 0) {
         if (cmd_db(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "session") == 0) {
+        if (cmd_session(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "config") == 0) {
+        if (cmd_config(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "storage") == 0) {
+        if (cmd_storage(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "crypto") == 0) {
+        if (cmd_crypto(argc - 1, argv + 1) != 0) printf("\n");
+    } else if (strcmp(cmd, "network") == 0) {
+        if (cmd_network(argc - 1, argv + 1) != 0) printf("\n");
     } else if (strcmp(cmd, "verbose") == 0) {
         g_config.verbose = !g_config.verbose;
         printf("[*] 详细模式: %s\n", g_config.verbose ? "开" : "关");

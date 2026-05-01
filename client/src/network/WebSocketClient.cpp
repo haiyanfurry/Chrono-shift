@@ -19,7 +19,7 @@
 
 #pragma comment(lib, "crypt32.lib")
 
-#include "../../server/include/tls_server.h"
+#include "tls_client.h"
 
 #include "../util/Logger.h"
 

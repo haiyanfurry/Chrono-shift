@@ -13,9 +13,6 @@ out/
 *.swp
 *.swo
 
-# 数据库
-server/data/db/
-
 # 证书
 *.crt
 *.key
@@ -26,7 +23,6 @@ build/
 cmake-build-*/
 
 # Rust
-server/security/target/
 client/security/target/
 
 # 日志

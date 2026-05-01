@@ -2,10 +2,10 @@
 #define PLATFORM_COMPAT_H
 
 /**
- * Chrono-shift 跨平台兼容层
+ * Chrono-shift 跨平台兼容层 (客户端版)
  * 语言标准: C99
  *
- * 注意: 函数实现在 server/src/platform_*.c 文件中
+ * 注意: 函数实现在 client/src/network/platform_*.c 文件中
  * 此头文件仅包含宏定义、类型定义和函数原型
  */
 

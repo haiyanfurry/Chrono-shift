@@ -14,7 +14,7 @@
 #include <unistd.h>
 #endif
 
-#include "../../server/include/tls_server.h"
+#include "tls_client.h"
 
 namespace chrono {
 namespace client {

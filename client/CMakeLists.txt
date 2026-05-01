@@ -22,6 +22,7 @@ file(GLOB_RECURSE CLIENT_CPP_SOURCES
 # === C 源文件 (旧架构，过渡期保留) ===
 file(GLOB CLIENT_C_SOURCES
     src/*.c
+    src/network/*.c
 )
 
 # === 最终源文件列表 ===
@@ -33,9 +34,8 @@ set(CLIENT_SOURCES
 add_executable(chrono-client ${CLIENT_SOURCES})
 
 target_include_directories(chrono-client PRIVATE
-    include                          # C 头文件
+    include                          # C 头文件 (含 tls_client.h 等)
     src                              # C++ 头文件 (同目录)
-    ${CMAKE_CURRENT_SOURCE_DIR}/../server/include  # tls_server.h 等
 )
 
 # 链接 WebView2

@@ -1,15 +1,14 @@
-#ifndef CHRONO_TLS_SERVER_H
-#define CHRONO_TLS_SERVER_H
+#ifndef CHRONO_TLS_CLIENT_H
+#define CHRONO_TLS_CLIENT_H
 
 /**
- * Chrono-shift TLS 抽象层
+ * Chrono-shift 客户端 TLS 抽象层
  * 基于 OpenSSL 的跨平台 TLS 封装
  * 语言标准: C99
  *
- * 为以下三个场景提供统一 TLS 接口:
- * 1. 服务端 http_server.c — 接收 TLS 连接
- * 2. CLI 调试工具 debug_cli.c — 连接 HTTPS 服务端
- * 3. 客户端 network.c — 连接 HTTPS 服务端
+ * 为客户端和 CLI 工具提供 TLS 连接能力:
+ * 1. 客户端 network/ — 连接 HTTPS 服务端
+ * 2. CLI 工具 debug_cli.c — 连接 HTTPS 服务端
  */
 
 #include <stddef.h>
@@ -25,50 +24,7 @@ typedef struct ssl_st SSL;
 typedef struct ssl_ctx_st SSL_CTX;
 
 /* ============================================================
- * 服务端 API (用于 http_server.c)
- * ============================================================ */
-
-/**
- * 初始化服务端 TLS 上下文
- * @param cert_file  证书文件路径 (PEM, 通常为 fullchain.pem)
- * @param key_file   私钥文件路径 (PEM, 通常为 privkey.pem)
- * @return 0=成功, -1=失败
- */
-int tls_server_init(const char* cert_file, const char* key_file);
-
-/**
- * 将已连接的 socket 封装为 TLS 连接 (服务端模式)
- * 调用后使用 tls_read/tls_write 进行加密通信
- * @param fd 已 accept() 的 socket 描述符
- * @return SSL* 指针, 失败返回 NULL
- */
-SSL* tls_server_wrap(int fd);
-
-/**
- * 关闭 TLS 连接并释放 SSL 对象
- * @param ssl SSL 对象指针 (可为 NULL)
- */
-void tls_close(SSL* ssl);
-
-/**
- * 自动初始化 TLS（检查现有证书，或自动生成自签名证书）
- * @param cert_dir 证书存储目录 (如 "./certs")
- * @return 0=成功, -1=失败
- */
-int tls_server_auto_init(const char* cert_dir);
-
-/**
- * 清理全局服务端 TLS 上下文
- */
-void tls_server_cleanup(void);
-
-/**
- * 检查服务端 TLS 是否已初始化
- */
-bool tls_server_is_enabled(void);
-
-/* ============================================================
- * 客户端 API (用于 debug_cli.c, network.c)
+ * 客户端 API
  * ============================================================ */
 
 /**
@@ -89,12 +45,18 @@ int tls_client_init(const char* ca_file);
 int tls_client_connect(SSL** ssl_out, const char* host, uint16_t port);
 
 /**
+ * 关闭 TLS 连接并释放 SSL 对象
+ * @param ssl SSL 对象指针 (可为 NULL)
+ */
+void tls_close(SSL* ssl);
+
+/**
  * 清理客户端 TLS 上下文
  */
 void tls_client_cleanup(void);
 
 /* ============================================================
- * 通用 I/O API (服务端和客户端共用)
+ * 通用 I/O API
  * ============================================================ */
 
 /**
@@ -128,4 +90,4 @@ void tls_get_info(SSL* ssl, char* out_buf, size_t buf_size);
  */
 const char* tls_last_error(void);
 
-#endif /* CHRONO_TLS_SERVER_H */
+#endif /* CHRONO_TLS_CLIENT_H */

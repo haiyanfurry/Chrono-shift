@@ -18,6 +18,5 @@ else()
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -pedantic")
 endif()
 
-# 子项目
-add_subdirectory(server)
+# 子项目 (仅客户端，服务端已移除)
 add_subdirectory(client)

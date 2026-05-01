@@ -18,7 +18,7 @@
 #include <sys/socket.h>
 #endif
 
-#include "../../server/include/tls_server.h"
+#include "tls_client.h"
 
 #include "../util/Logger.h"
 

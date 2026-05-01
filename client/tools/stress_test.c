@@ -61,7 +61,7 @@
 #endif
 
 /* TLS/HTTPS 支持 — tls_server.h 提供客户端 API */
-#include "../include/tls_server.h"
+#include "../include/tls_client.h"
 
 /* ============================================================
    配置
