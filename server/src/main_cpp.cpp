@@ -108,6 +108,13 @@ int main(int argc, char* argv[])
     chrono::handler::MessageHandler msg_handler(db);
     chrono::handler::OAuthHandler oauth_handler(db);
 
+    // 配置 OAuth 回调地址（前端 oauth_callback.html，用于 postMessage 通信）
+    chrono::handler::OAuthConfig oauth_config;
+    oauth_config.qq.redirect_uri       = "http://127.0.0.1:9010/oauth_callback.html";
+    oauth_config.wechat.redirect_uri   = "http://127.0.0.1:9010/oauth_callback.html";
+    oauth_config.base_url              = "https://127.0.0.1:" + std::to_string(port);
+    oauth_handler.init_oauth_config(oauth_config);
+
     // === 创建服务器 ===
     chrono::http::ServerConfig config;
     config.host     = host;
@@ -257,6 +264,109 @@ int main(int argc, char* argv[])
                 return;
             }
             auto result = oauth_handler.handle_email_register(*params);
+            res.set_json(result.serialize());
+        });
+
+    // ============================================================
+    // P9.2 新 OAuth 路由
+    // ============================================================
+
+    // 辅助函数：解析 URL 查询字符串为 JsonValue 对象
+    // 输入: "code=xxx&state=yyy"
+    // 输出: { "code": "xxx", "state": "yyy" }
+    auto parse_query_string = [](const std::string& query) -> JsonValue {
+        JsonValue params = json_object();
+        if (query.empty()) return params;
+        size_t start = 0;
+        while (start < query.size()) {
+            size_t amp = query.find('&', start);
+            std::string pair = (amp == std::string::npos)
+                ? query.substr(start)
+                : query.substr(start, amp - start);
+            size_t eq = pair.find('=');
+            if (eq != std::string::npos) {
+                std::string key = pair.substr(0, eq);
+                std::string val = pair.substr(eq + 1);
+                // URL 解码 (简化: 仅处理 %xx 和 +)
+                std::string decoded;
+                for (size_t i = 0; i < val.size(); i++) {
+                    if (val[i] == '%' && i + 2 < val.size()) {
+                        auto hex_to_char = [](char h1, char h2) -> char {
+                            auto hc = [](char c) -> int {
+                                if (c >= '0' && c <= '9') return c - '0';
+                                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                                return 0;
+                            };
+                            return static_cast<char>((hc(h1) << 4) | hc(h2));
+                        };
+                        decoded += hex_to_char(val[i+1], val[i+2]);
+                        i += 2;
+                    } else if (val[i] == '+') {
+                        decoded += ' ';
+                    } else {
+                        decoded += val[i];
+                    }
+                }
+                params.object_insert(key, JsonValue(decoded));
+            }
+            start = (amp == std::string::npos) ? query.size() : amp + 1;
+        }
+        return params;
+    };
+
+    // 获取 QQ 授权 URL
+    server.register_route(Method::kGet, "/api/oauth/qq/url",
+        [&oauth_handler, &parse_query_string](const Request& req, Response& res) {
+            auto params = parse_query_string(req.query);
+            auto result = oauth_handler.handle_qq_auth_url(params);
+            res.set_json(result.serialize());
+        });
+
+    // QQ 授权回调
+    server.register_route(Method::kGet, "/api/oauth/qq/callback",
+        [&oauth_handler, &parse_query_string](const Request& req, Response& res) {
+            auto params = parse_query_string(req.query);
+            auto result = oauth_handler.handle_qq_callback(params);
+            res.set_json(result.serialize());
+        });
+
+    // 获取微信授权 URL
+    server.register_route(Method::kGet, "/api/oauth/wechat/url",
+        [&oauth_handler, &parse_query_string](const Request& req, Response& res) {
+            auto params = parse_query_string(req.query);
+            auto result = oauth_handler.handle_wechat_auth_url(params);
+            res.set_json(result.serialize());
+        });
+
+    // 微信授权回调
+    server.register_route(Method::kGet, "/api/oauth/wechat/callback",
+        [&oauth_handler, &parse_query_string](const Request& req, Response& res) {
+            auto params = parse_query_string(req.query);
+            auto result = oauth_handler.handle_wechat_callback(params);
+            res.set_json(result.serialize());
+        });
+
+    // 发送邮箱验证码
+    server.register_route(Method::kPost, "/api/oauth/email/send-code",
+        [&oauth_handler](const Request& req, Response& res) {
+            JsonParser parser;
+            auto params = parser.parse(
+                std::string(req.body.begin(), req.body.end()));
+            if (!params || !params->is_object()) {
+                res.set_status(400, "Bad Request").set_json(
+                    build_error("无效的请求体").serialize());
+                return;
+            }
+            auto result = oauth_handler.handle_send_email_code(*params);
+            res.set_json(result.serialize());
+        });
+
+    // 获取支持的 OAuth 登录方式列表
+    server.register_route(Method::kGet, "/api/oauth/providers",
+        [&oauth_handler](const Request& req, Response& res) {
+            JsonValue params = json_object();
+            auto result = oauth_handler.handle_list_providers(params);
             res.set_json(result.serialize());
         });
 

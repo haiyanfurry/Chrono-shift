@@ -1,6 +1,6 @@
 /**
  * Chrono-shift 认证管理
- * 处理登录、注册、令牌管理
+ * 处理登录、注册、令牌管理、OAuth 登录、邮箱注册
  */
 
 const Auth = window.Auth || {};
@@ -91,6 +91,36 @@ Auth.restoreSession = function () {
     }
     
     return false;
+};
+
+// === OAuth 登录（委托给 oauth.js） ===
+
+/**
+ * QQ 登录 — 打开 OAuth 弹窗
+ */
+Auth.qqLogin = async function () {
+    return await Auth.oauthLogin('qq');
+};
+
+/**
+ * 微信登录 — 打开 OAuth 弹窗
+ */
+Auth.wechatLogin = async function () {
+    return await Auth.oauthLogin('wechat');
+};
+
+/**
+ * 发送邮箱验证码
+ */
+Auth.sendEmailCode = async function () {
+    return await Auth.sendEmailCode();
+};
+
+/**
+ * 邮箱注册（验证码 + 密码）
+ */
+Auth.emailRegister = async function () {
+    return await Auth.emailRegister();
 };
 
 window.Auth = Auth;

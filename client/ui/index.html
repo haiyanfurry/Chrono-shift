@@ -22,6 +22,7 @@
     <script src="js/ipc.js" defer></script>
     <script src="js/api.js" defer></script>
     <script src="js/auth.js" defer></script>
+    <script src="js/oauth.js" defer></script>
     <script src="js/theme_engine.js" defer></script>
     <script src="js/chat.js" defer></script>
     <script src="js/contacts.js" defer></script>
@@ -56,6 +57,20 @@
                         <p class="auth-switch">
                             还没有账号？<a href="#" onclick="showRegister()">立即注册</a>
                         </p>
+                        <!-- OAuth 第三方登录 -->
+                        <div class="oauth-divider">
+                            <span>其他登录方式</span>
+                        </div>
+                        <div class="oauth-buttons">
+                            <button type="button" class="btn-oauth btn-oauth-qq" onclick="Auth.qqLogin()">
+                                <span class="oauth-icon">🐧</span>
+                                <span>QQ 登录</span>
+                            </button>
+                            <button type="button" class="btn-oauth btn-oauth-wechat" onclick="Auth.wechatLogin()">
+                                <span class="oauth-icon">💚</span>
+                                <span>微信登录</span>
+                            </button>
+                        </div>
                     </form>
                     
                     <!-- 注册表单 -->
@@ -76,6 +91,23 @@
                         <p class="auth-switch">
                             已有账号？<a href="#" onclick="showLogin()">立即登录</a>
                         </p>
+                        <!-- 邮箱注册区 -->
+                        <div class="email-register">
+                            <div class="oauth-divider">
+                                <span>邮箱注册</span>
+                            </div>
+                            <div class="form-group">
+                                <input type="email" id="reg-email" placeholder="邮箱地址" autocomplete="email">
+                            </div>
+                            <div class="form-group-with-btn">
+                                <input type="text" id="reg-email-code" placeholder="验证码" autocomplete="off">
+                                <button type="button" class="btn btn-sm" id="btn-send-code" onclick="Auth.sendEmailCode()">发送验证码</button>
+                            </div>
+                            <div class="form-group">
+                                <input type="password" id="reg-email-password" placeholder="设置密码（至少 6 位）" autocomplete="new-password">
+                            </div>
+                            <button type="button" class="btn btn-primary btn-full" onclick="Auth.emailRegister()">邮箱注册</button>
+                        </div>
                     </form>
                 </div>
             </div>

@@ -21,6 +21,8 @@ file(GLOB_RECURSE CPP_SOURCES
     src/ffi/RustBridge.cpp
     src/ws/WebSocket.cpp
     src/security/SecurityManager.cpp
+    src/security/OAuthClient.cpp
+    src/security/EmailVerifier.cpp
     src/handler/UserHandler.cpp
     src/handler/MessageHandler.cpp
     src/handler/OAuthHandler.cpp
