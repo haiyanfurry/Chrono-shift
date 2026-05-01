@@ -205,6 +205,9 @@ mod tests {
 
     #[test]
     fn test_verify_jwt_expired() {
+        // 确保密钥已加载（从 key_mgmt 获取运行时密钥）
+        ensure_key_loaded();
+
         // 手动构造一个已过期的 JWT
         let expired_claims = Claims {
             sub: "expired_user".to_string(),
@@ -213,10 +216,11 @@ mod tests {
             role: "user".to_string(),
         };
 
+        let secret = JWT_KEY.get().expect("JWT_KEY 应在 ensure_key_loaded 后初始化");
         let token = encode(
             &Header::default(),
             &expired_claims,
-            &EncodingKey::from_secret(SECRET.as_ref()),
+            &EncodingKey::from_secret(secret.as_ref()),
         ).unwrap();
 
         let token_cstr = CString::new(token).unwrap();

@@ -1,10 +1,17 @@
 //! Chrono-shift 服务端安全模块
-//! 通过 extern "C" FFI 导出函数供 C99 后端调用
+//! 通过 extern "C" FFI 导出函数供 C++/C 后端调用
 
 pub mod crypto;
 pub mod auth;
 pub mod password;
 pub mod key_mgmt;
+pub mod safe_string;
+pub mod rate_limiter;
+pub mod input_sanitizer;
+pub mod session_manager;
+pub mod csrf;
+pub mod oauth_client;
+pub mod email_verifier;
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -41,6 +48,6 @@ pub extern "C" fn rust_free_string(s: *mut c_char) {
 /// 获取版本信息
 #[no_mangle]
 pub extern "C" fn rust_version() -> *mut c_char {
-    let version = CString::new("0.1.0").unwrap();
+    let version = CString::new("1.0.0").unwrap();
     version.into_raw()
 }
