@@ -94,6 +94,9 @@ public:
     static void global_cleanup();
 
 private:
+    /** 获取 OpenSSL 错误信息 */
+    std::string get_openssl_error();
+
     void* ctx_ = nullptr;       // SSL_CTX*
     std::string cert_path_;
     std::string key_path_;

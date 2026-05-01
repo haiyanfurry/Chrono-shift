@@ -20,8 +20,9 @@
 #include <netinet/in.h>
 #endif
 
-// OpenSSL SHA-1
+// OpenSSL SHA-1 + SSL types
 #include <openssl/sha.h>
+#include <openssl/ssl.h>
 
 namespace chrono {
 namespace ws {
