@@ -10,6 +10,7 @@ Contact Email / 联系邮箱：
 [2752842448@qq.com]
 
 Maintainers / 维护人员：
+haiyanfurry/海盐
 
 No bug bounty / 暂无漏洞赏金计划。
 Fix will be updated in free time.
