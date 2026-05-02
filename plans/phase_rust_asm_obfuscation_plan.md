@@ -2,7 +2,10 @@
 
 > **目标**: 针对二次元/furry 用户社区，在 Chrono-shift 客户端内加入抗劫持分析与私有解码加密层。
 > **核心手段**: Rust FFI 安全层 + NASM 汇编私有加密（仅此功能单独使用 ASM）。
-> **算法方向**: 对称流密码 + 自定义 S-Box 置换表 + 多轮混淆，全部 ASM 手写实现。
+> **算法方向**: 对称流密码 + 自定义 S-Box 置换表 + 8 层多轮混淆，全部 ASM 手写实现。
+> **密钥长度**: 512 位（64 字节），运行时由密钥动态生成 S-Box。
+> **密钥管理**: 用户身份 → 每日与服务端配对轮换 → 快速登录。
+> **应用范围**: 全部消息加密（客户端 Windows 先行，服务端暂不做）。
 > **环境**: NASM 3.01（Windows，PATH 内可用）。
 > **Phase 10 兼容预留**: `Cargo.toml` 同时支持 `staticlib` + `cdylib`，`lib.rs` FFI 导出兼容 JNI。
 
@@ -47,7 +50,7 @@
 ; --- 加密函数 ---
 ; RCX = data ptr       (输入明文)
 ; RDX = data length    (输入长度)
-; R8  = key ptr        (输入密钥, 32 字节)
+; R8  = key ptr        (输入密钥, 64 字节 / 512 位)
 ; R9  = out ptr        (输出密文缓冲区, 长度 >= data length)
 ; Returns: RAX = 0 成功, -1 失败
 global asm_obfuscate
@@ -55,7 +58,7 @@ global asm_obfuscate
 ; --- 解密函数 ---
 ; RCX = data ptr       (输入密文)
 ; RDX = data length    (输入长度)
-; R8  = key ptr        (输入密钥, 32 字节)
+; R8  = key ptr        (输入密钥, 64 字节 / 512 位)
 ; R9  = out ptr        (输出明文缓冲区, 长度 >= data length)
 ; Returns: RAX = 0 成功, -1 失败
 global asm_deobfuscate
@@ -119,12 +122,12 @@ asm_obfuscate:
     xor     r10d, r10d
 .loop:
     movzx   eax, byte [rsi]
-    xor     al, byte [r8 + r10]    ; 轮询密钥
+    xor     al, byte [r8 + r10]    ; 轮询密钥（512 位 = 64 字节）
     mov     byte [rdi], al
     inc     rsi
     inc     rdi
     inc     r10
-    and     r10, 31                ; 密钥长度 32
+    and     r10, 63                ; 密钥长度 64
     loop    .loop
     
     pop     r15
@@ -151,8 +154,8 @@ asm_deobfuscate:
 自研对称流密码建议结构:
 
 1. 密钥扩展 (Key Schedule):
-   输入: 32 字节密钥
-   输出: 多轮子密钥 / S-Box 初始置换
+   输入: 64 字节密钥 (512 位)
+   输出: 多轮子密钥 / S-Box 初始置换（运行时动态生成）
    方式: 用户自定义布尔函数 + 轮常量
 
 2. S-Box 置换层:
@@ -248,7 +251,7 @@ extern "C" {
 }
 
 /// 调用 ASM 加密（失败时返回 Err）
-pub fn obfuscate(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, String> {
+pub fn obfuscate(data: &[u8], key: &[u8; 64]) -> Result<Vec<u8>, String> {
     let mut out = vec![0u8; data.len()];
     let ret = unsafe {
         asm_obfuscate(data.as_ptr(), data.len(), key.as_ptr(), out.as_mut_ptr())
@@ -258,7 +261,7 @@ pub fn obfuscate(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, String> {
 }
 
 /// 调用 ASM 解密
-pub fn deobfuscate(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, String> {
+pub fn deobfuscate(data: &[u8], key: &[u8; 64]) -> Result<Vec<u8>, String> {
     let mut out = vec![0u8; data.len()];
     let ret = unsafe {
         asm_deobfuscate(data.as_ptr(), data.len(), key.as_ptr(), out.as_mut_ptr())
