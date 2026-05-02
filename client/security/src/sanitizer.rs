@@ -54,3 +54,15 @@ pub fn validate_token(token: &str) -> bool {
     }
     token.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
+
+/// 验证消息长度是否在安全范围内
+pub fn validate_message_length(text: &str) -> bool {
+    if text.is_empty() {
+        return false;
+    }
+    if text.len() > 1_048_576 {
+        // 最大 1MB
+        return false;
+    }
+    true
+}

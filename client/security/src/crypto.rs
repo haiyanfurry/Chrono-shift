@@ -7,7 +7,7 @@ use std::os::raw::c_char;
 use std::ptr;
 
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
+use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::sanitizer;

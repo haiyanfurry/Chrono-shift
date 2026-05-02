@@ -84,7 +84,8 @@ mod tests {
     /// 测试 ASM 加密/解密往返正确性
     #[test]
     fn test_obfuscate_deobfuscate_roundtrip() {
-        let data = b"Hello, furry/二次元 community! ASM 私有加密测试。";
+        let data = b"Hello, furry/\xE4\xBA\x8C\xE6\xAC\xA1\xE5\x85\x83 community! ASM \
+            \xE7\xA7\x81\xE6\x9C\x89\xE5\x8A\xA0\xE5\xAF\x86\xE6\xB5\x8B\xE8\xAF\x95\xE3\x80\x82";
         let key = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
         let encrypted = obfuscate(data, key).expect("加密失败");

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
+use aes_gcm::aead::{Aead, AeadCore, KeyInit, OsRng};
 
 use crate::sanitizer;
 
@@ -62,13 +62,13 @@ fn get_device_key() -> Result<[u8; 32], String> {
 }
 
 /// 安全存储数据
-fn secure_store(key: &str, value: &str) -> Result<(), String> {
+fn secure_store(entry_key: &str, value: &str) -> Result<(), String> {
     let device_key = get_device_key()?;
-    let key = Key::<Aes256Gcm>::from_slice(&device_key);
-    let cipher = Aes256Gcm::new(key);
+    let aes_key = Key::<Aes256Gcm>::from_slice(&device_key);
+    let cipher = Aes256Gcm::new(aes_key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
-    let entry = format!("{}={}", key, value);
+    let entry = format!("{}={}", entry_key, value);
     let ciphertext = cipher.encrypt(&nonce, entry.as_bytes())
         .map_err(|e| format!("Encryption failed: {}", e))?;
 

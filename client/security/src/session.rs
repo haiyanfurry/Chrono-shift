@@ -4,10 +4,8 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
+use std::sync::LazyLock;
 use std::sync::Mutex;
-
-use once_cell::sync::Lazy;
-use rand::RngCore;
 
 use crate::sanitizer;
 
@@ -19,7 +17,7 @@ struct Session {
     is_logged_in: bool,
 }
 
-static SESSION: Lazy<Mutex<Session>> = Lazy::new(|| {
+static SESSION: LazyLock<Mutex<Session>> = LazyLock::new(|| {
     Mutex::new(Session {
         user_id: String::new(),
         username: String::new(),
