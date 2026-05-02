@@ -7,9 +7,13 @@
  */
 
 #include "ClientHttpServer.h"
+#include "TlsServerContext.h"
 
 #include <cstring>
 #include <sstream>
+
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 
 #include "../util/Logger.h"
 
@@ -24,6 +28,8 @@ namespace app {
 ClientHttpServer::ClientHttpServer()
     : listen_fd_(INVALID_SOCKET)
     , port_(0)
+    , use_https_(false)
+    , current_ssl_(nullptr)
 {
 }
 
@@ -40,10 +46,16 @@ ClientHttpServer::ClientHttpServer(ClientHttpServer&& other) noexcept
     : listen_fd_(other.listen_fd_)
     , port_(other.port_)
     , running_(other.running_.load())
+    , use_https_(other.use_https_)
+    , tls_ctx_(std::move(other.tls_ctx_))
+    , current_ssl_(nullptr)
+    , tls_cert_file_(std::move(other.tls_cert_file_))
+    , tls_key_file_(std::move(other.tls_key_file_))
 {
     other.listen_fd_ = INVALID_SOCKET;
     other.port_ = 0;
     other.running_ = false;
+    other.use_https_ = false;
 }
 
 ClientHttpServer& ClientHttpServer::operator=(ClientHttpServer&& other) noexcept
@@ -53,9 +65,15 @@ ClientHttpServer& ClientHttpServer::operator=(ClientHttpServer&& other) noexcept
         listen_fd_ = other.listen_fd_;
         port_ = other.port_;
         running_ = other.running_.load();
+        use_https_ = other.use_https_;
+        tls_ctx_ = std::move(other.tls_ctx_);
+        current_ssl_ = nullptr;
+        tls_cert_file_ = std::move(other.tls_cert_file_);
+        tls_key_file_ = std::move(other.tls_key_file_);
         other.listen_fd_ = INVALID_SOCKET;
         other.port_ = 0;
         other.running_ = false;
+        other.use_https_ = false;
     }
     return *this;
 }
@@ -69,6 +87,22 @@ bool ClientHttpServer::start(uint16_t port)
     if (running_) {
         LOG_WARN("本地 HTTP 服务已在运行中 (端口 %u)", port_);
         return true;
+    }
+
+    /* HTTPS 模式需预先配置证书 */
+    if (use_https_) {
+        if (tls_cert_file_.empty() || tls_key_file_.empty()) {
+            LOG_ERROR("HTTPS 模式未设置证书路径，请先调用 set_tls_cert_paths()");
+            return false;
+        }
+        tls_ctx_ = std::make_unique<TlsServerContext>(tls_cert_file_, tls_key_file_);
+        if (!tls_ctx_ || !tls_ctx_->is_valid()) {
+            LOG_ERROR("初始化 TLS 服务端上下文失败: %s",
+                      tls_ctx_ ? tls_ctx_->last_error() : "分配失败");
+            tls_ctx_.reset();
+            return false;
+        }
+        LOG_INFO("TLS 服务端上下文初始化成功");
     }
 
     /* 创建 socket */
@@ -119,7 +153,8 @@ bool ClientHttpServer::start(uint16_t port)
         return false;
     }
 
-    LOG_INFO("客户端本地 HTTP 服务已启动: 127.0.0.1:%u", port);
+    LOG_INFO("客户端本地 %s 服务已启动: 127.0.0.1:%u",
+             use_https_ ? "HTTPS" : "HTTP", port);
     return true;
 }
 
@@ -154,6 +189,22 @@ uint16_t ClientHttpServer::get_port() const
 }
 
 /* ============================================================
+ * TLS / HTTPS 配置
+ * ============================================================ */
+
+void ClientHttpServer::set_tls_cert_paths(const std::string& cert_file,
+                                           const std::string& key_file)
+{
+    tls_cert_file_ = cert_file;
+    tls_key_file_  = key_file;
+}
+
+void ClientHttpServer::set_use_https(bool enable)
+{
+    use_https_ = enable;
+}
+
+/* ============================================================
  * 服务线程
  * ============================================================ */
 
@@ -175,7 +226,18 @@ void ClientHttpServer::server_loop()
             break;
         }
 
-        handle_client(client_fd);
+        if (use_https_) {
+            /* TLS 握手 */
+            struct ssl_st* ssl = tls_ctx_->accept(static_cast<int>(client_fd));
+            if (!ssl) {
+                LOG_WARN("TLS 握手失败: %s", tls_ctx_->last_error());
+                closesocket(client_fd);
+                continue;
+            }
+            handle_client_tls(client_fd, ssl);
+        } else {
+            handle_client(client_fd);
+        }
     }
 }
 
@@ -231,9 +293,88 @@ void ClientHttpServer::handle_client(SOCKET fd)
     closesocket(fd);
 }
 
+void ClientHttpServer::handle_client_tls(SOCKET fd, struct ssl_st* ssl)
+{
+    /* 设置当前 SSL 连接，使 send_response 等使用 SSL_write */
+    current_ssl_ = ssl;
+
+    char buf[kMaxBufSize] = {};
+    int received = SSL_read(ssl, buf, static_cast<int>(sizeof(buf) - 1));
+    if (received <= 0) {
+        int err = SSL_get_error(ssl, received);
+        if (err != SSL_ERROR_ZERO_RETURN && err != SSL_ERROR_WANT_READ) {
+            LOG_DEBUG("SSL_read 错误: %d", err);
+        }
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        closesocket(fd);
+        current_ssl_ = nullptr;
+        return;
+    }
+    buf[received] = '\0';
+
+    /* 解析请求行: METHOD /path HTTP/1.1 */
+    char method[16] = {}, path[256] = {};
+    if (sscanf(buf, "%15s %255s", method, path) < 2) {
+        send_error_json(fd, 400, "Bad Request");
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        closesocket(fd);
+        current_ssl_ = nullptr;
+        return;
+    }
+
+    /* 提取 body (简单解析: 空行后为 body) */
+    std::string request_body;
+    const char* body_start = std::strstr(buf, "\r\n\r\n");
+    if (body_start) {
+        body_start += 4;
+        request_body = std::string(body_start, received - (body_start - buf));
+    }
+
+    /* 优先尝试动态路由分发 */
+    if (dispatch_dynamic_route(fd, path, method, request_body)) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+        closesocket(fd);
+        current_ssl_ = nullptr;
+        return;
+    }
+
+    /* 静态路由匹配 */
+    if (std::strcmp(method, "GET") == 0) {
+        if (std::strcmp(path, "/health") == 0) {
+            handle_health(fd);
+        } else if (std::strcmp(path, "/api/local/status") == 0) {
+            handle_local_status(fd);
+        } else {
+            handle_not_found(fd);
+        }
+    } else {
+        send_error_json(fd, 405, "Method Not Allowed");
+    }
+
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    closesocket(fd);
+    current_ssl_ = nullptr;
+}
+
 /* ============================================================
  * HTTP 响应辅助
  * ============================================================ */
+
+void ClientHttpServer::send_raw(const void* data, size_t len)
+{
+    if (current_ssl_) {
+        SSL_write(current_ssl_, data, static_cast<int>(len));
+    } else {
+        /* 在 send_response 的上下文中我们不需要 fd，
+           但这里只是为统一接口保留参数兼容性。
+           实际调用 send_response 等函数时，TLS 模式
+           通过 current_ssl_ 路由写入。 */
+    }
+}
 
 void ClientHttpServer::send_response(SOCKET fd, int status_code,
                                      const std::string& status_text,
@@ -249,9 +390,19 @@ void ClientHttpServer::send_response(SOCKET fd, int status_code,
            << "\r\n";
 
     std::string header_str = header.str();
-    ::send(fd, header_str.data(), static_cast<int>(header_str.size()), 0);
-    if (!body.empty()) {
-        ::send(fd, body.data(), static_cast<int>(body.size()), 0);
+
+    if (current_ssl_) {
+        /* TLS 模式: 使用 SSL_write */
+        SSL_write(current_ssl_, header_str.data(), static_cast<int>(header_str.size()));
+        if (!body.empty()) {
+            SSL_write(current_ssl_, body.data(), static_cast<int>(body.size()));
+        }
+    } else {
+        /* 普通模式: 使用 ::send */
+        ::send(fd, header_str.data(), static_cast<int>(header_str.size()), 0);
+        if (!body.empty()) {
+            ::send(fd, body.data(), static_cast<int>(body.size()), 0);
+        }
     }
 }
 

@@ -14,13 +14,20 @@
 #include <unordered_map>
 #include <atomic>
 #include <thread>
+#include <memory>       /* std::unique_ptr */
 
 #include <winsock2.h>
 #include <windows.h>
 
+/* OpenSSL 前向声明 (避免在头文件中引入 OpenSSL 头) */
+struct ssl_st;
+
 namespace chrono {
 namespace client {
 namespace app {
+
+/* TLS 服务端上下文前向声明 */
+class TlsServerContext;
 
 /**
  * 客户端本地 HTTP 服务
@@ -65,6 +72,23 @@ public:
     /* 允许移动 */
     ClientHttpServer(ClientHttpServer&& other) noexcept;
     ClientHttpServer& operator=(ClientHttpServer&& other) noexcept;
+
+    // ============================================================
+    // TLS / HTTPS 支持
+    // ============================================================
+
+    /**
+     * 设置 TLS 证书路径 (需在 start() 之前调用)
+     * @param cert_file  PEM 证书文件路径
+     * @param key_file   PEM 私钥文件路径
+     */
+    void set_tls_cert_paths(const std::string& cert_file, const std::string& key_file);
+
+    /**
+     * 启用或禁用 HTTPS 模式
+     * @param enable true=启用 HTTPS, false=使用普通 HTTP
+     */
+    void set_use_https(bool enable);
 
     // ============================================================
     // 生命周期
@@ -128,8 +152,11 @@ private:
     /** 服务线程入口 */
     void server_loop();
 
-    /** 处理单个客户端连接 */
+    /** 处理单个普通 TCP 客户端连接 */
     void handle_client(SOCKET fd);
+
+    /** 处理单个 TLS 客户端连接 */
+    void handle_client_tls(SOCKET fd, struct ssl_st* ssl);
 
     /** 发送 HTTP 响应 */
     void send_response(SOCKET fd, int status_code,
@@ -145,6 +172,9 @@ private:
     /** 发送错误 JSON */
     void send_error_json(SOCKET fd, int status_code,
                          const std::string& message);
+
+    /** 内部: 向 fd 或 ssl 发送裸数据 */
+    void send_raw(const void* data, size_t len);
 
     // ============================================================
     // 路由处理器
@@ -182,6 +212,23 @@ private:
 
     /** 动态路由表 (path_prefix -> handler) */
     std::unordered_map<std::string, HttpHandler> dynamic_routes_;
+
+    // ============================================================
+    // TLS / HTTPS 成员
+    // ============================================================
+
+    /** TLS 服务端上下文 (仅 HTTPS 模式使用) */
+    std::unique_ptr<TlsServerContext> tls_ctx_;
+
+    /** 是否启用 HTTPS */
+    bool use_https_ = false;
+
+    /** 当前 TLS 连接 (handle_client_tls 生命周期内非空) */
+    struct ssl_st* current_ssl_ = nullptr;
+
+    /** TLS 证书路径 */
+    std::string tls_cert_file_;
+    std::string tls_key_file_;
 };
 
 } // namespace app
