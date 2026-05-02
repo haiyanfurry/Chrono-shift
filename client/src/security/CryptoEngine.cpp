@@ -114,6 +114,56 @@ int CryptoEngine::decrypt_e2e(const std::string& ciphertext_b64,
 #endif
 }
 
+int CryptoEngine::obfuscate_message(const std::string& data_b64,
+                                    const std::string& key_hex,
+                                    std::string& obfuscated_b64)
+{
+    if (!initialized_) return -1;
+
+#ifdef RUST_FEATURE_ENABLED
+    char* result = rust_client_obfuscate_message(data_b64.c_str(), key_hex.c_str());
+    if (!result) {
+        LOG_ERROR("ASM 混淆加密失败");
+        return -1;
+    }
+    obfuscated_b64 = result;
+    rust_client_free_string(result);
+    return 0;
+#else
+    (void)key_hex;
+    LOG_DEBUG("ASM 混淆加密 (占位模式)");
+    obfuscated_b64 = "MOCK_OBFUSCATED:" + data_b64;
+    return 0;
+#endif
+}
+
+int CryptoEngine::deobfuscate_message(const std::string& data_b64,
+                                     const std::string& key_hex,
+                                     std::string& plaintext_b64)
+{
+    if (!initialized_) return -1;
+
+#ifdef RUST_FEATURE_ENABLED
+    char* result = rust_client_deobfuscate_message(data_b64.c_str(), key_hex.c_str());
+    if (!result) {
+        LOG_ERROR("ASM 混淆解密失败");
+        return -1;
+    }
+    plaintext_b64 = result;
+    rust_client_free_string(result);
+    return 0;
+#else
+    (void)key_hex;
+    LOG_DEBUG("ASM 混淆解密 (占位模式)");
+    static const std::string prefix = "MOCK_OBFUSCATED:";
+    if (data_b64.compare(0, prefix.size(), prefix) == 0) {
+        plaintext_b64 = data_b64.substr(prefix.size());
+        return 0;
+    }
+    return -1;
+#endif
+}
+
 } // namespace security
 } // namespace client
 } // namespace chrono

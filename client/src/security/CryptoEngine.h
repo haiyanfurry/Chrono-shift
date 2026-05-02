@@ -62,6 +62,26 @@ public:
     int decrypt_e2e(const std::string& ciphertext_b64, const std::string& privkey_b64,
                     std::string& plaintext);
 
+    /**
+     * 使用 ASM 私有混淆加密消息
+     * @param data_b64  输入数据 (Base64 编码)
+     * @param key_hex   512 位密钥十六进制字符串 (128 hex 字符)
+     * @param obfuscated_b64[out] 混淆后数据 (Base64 编码)
+     * @return 0 成功, -1 失败
+     */
+    int obfuscate_message(const std::string& data_b64, const std::string& key_hex,
+                          std::string& obfuscated_b64);
+
+    /**
+     * 使用 ASM 私有混淆解密消息
+     * @param data_b64  混淆后数据 (Base64 编码)
+     * @param key_hex   512 位密钥十六进制字符串 (128 hex 字符)
+     * @param plaintext_b64[out] 原始数据 (Base64 编码)
+     * @return 0 成功, -1 失败
+     */
+    int deobfuscate_message(const std::string& data_b64, const std::string& key_hex,
+                            std::string& plaintext_b64);
+
     /** 检查是否已初始化 */
     bool is_initialized() const { return initialized_; }
 

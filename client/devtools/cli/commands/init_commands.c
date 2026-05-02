@@ -42,6 +42,7 @@ extern int init_cmd_gen_cert(void);
 extern int init_cmd_json_parse(void);
 extern int init_cmd_json_pretty(void);
 extern int init_cmd_trace(void);
+extern int init_cmd_obfuscate(void);
 
 /* 性能测试 */
 extern int init_cmd_ping(void);
@@ -85,6 +86,7 @@ void init_commands(void)
     init_cmd_json_parse();
     init_cmd_json_pretty();
     init_cmd_trace();
+    init_cmd_obfuscate();
 
     /* 性能测试 */
     init_cmd_ping();
