@@ -18,6 +18,8 @@ file(GLOB_RECURSE CLIENT_CPP_SOURCES
     src/storage/*.cpp
     src/security/*.cpp
     src/ai/*.cpp
+    src/plugin/*.cpp
+    devtools/core/*.cpp
 )
 
 # === C 源文件 (旧架构，过渡期保留) ===
@@ -37,6 +39,8 @@ add_executable(chrono-client ${CLIENT_SOURCES})
 target_include_directories(chrono-client PRIVATE
     include                          # C 头文件 (含 tls_client.h 等)
     src                              # C++ 头文件 (同目录)
+    devtools/core                    # DevToolsEngine/HttpApi/IpcHandler 头文件
+    devtools/cli                     # devtools_cli.h 共享头文件
 )
 
 # 链接 WebView2

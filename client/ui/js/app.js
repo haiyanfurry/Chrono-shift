@@ -22,7 +22,7 @@ function showRegister() {
     $('#form-register').classList.add('active');
 }
 
-// === 标签切换（聊天/联系人/社区/群组） ===
+// === 标签切换（聊天/联系人/社区/群组/开发者工具） ===
 function switchTab(tab) {
     // 更新导航按钮状态
     $$('.btn-nav').forEach(b => b.classList.remove('active'));
@@ -67,7 +67,32 @@ function switchTab(tab) {
         return;
     }
     
-    // 非群组视图：恢复联系人列表显示
+    if (tab === 'devtools') {
+        // 开发者工具视图：隐藏侧边栏列表，显示 devtools 视图
+        const contactList = $('#contact-list');
+        const contactGroups = $('#contact-groups');
+        const recentContacts = $('#recent-contacts');
+        const groupList = $('#group-list');
+        
+        if (contactList) contactList.style.display = 'none';
+        if (contactGroups) contactGroups.style.display = 'none';
+        if (recentContacts) recentContacts.style.display = 'none';
+        if (groupList) groupList.style.display = 'none';
+        
+        // 切换视图
+        $$('.content-view').forEach(v => v.classList.remove('active'));
+        const view = document.getElementById('view-devtools');
+        if (view) view.classList.add('active');
+        
+        // 通知 DevTools 模块激活
+        if (window.DevTools && typeof DevTools.activate === 'function') {
+            DevTools.activate();
+        }
+        
+        return;
+    }
+    
+    // 非群组/非 devtools 视图：恢复联系人列表显示
     const contactList = $('#contact-list');
     const contactGroups = $('#contact-groups');
     const recentContacts = $('#recent-contacts');

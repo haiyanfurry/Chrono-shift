@@ -24,6 +24,7 @@
 #include "../plugin/PluginManager.h"
 #include "../ai/AIProvider.h"
 #include "../ai/AIChatSession.h"
+#include "../devtools/core/DevToolsEngine.h"
 
 namespace chrono {
 namespace client {

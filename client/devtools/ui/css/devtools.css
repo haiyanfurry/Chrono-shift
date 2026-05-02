@@ -1,0 +1,602 @@
+/**
+ * devtools.css — 开发者工具调试面板样式
+ * 8个面板共享的 UI 主题
+ */
+
+/* ============================================================
+   开发者工具主容器
+   ============================================================ */
+
+#view-devtools {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+    background: var(--color-bg-secondary, #f5f5f8);
+    overflow: hidden;
+}
+
+#view-devtools.active {
+    display: flex;
+}
+
+/* --- 顶部工具栏 --- */
+.devtools-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--color-bg-primary, #fff);
+    border-bottom: 1px solid var(--color-border, #e8e8ed);
+    flex-shrink: 0;
+}
+
+.devtools-header h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text-primary, #1A1A2E);
+}
+
+.devtools-header .devtools-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: #22c55e;
+    color: #fff;
+    margin-left: 8px;
+}
+
+.devtools-header-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+/* --- 面板标签栏 --- */
+.devtools-tabs {
+    display: flex;
+    gap: 0;
+    background: var(--color-bg-primary, #fff);
+    border-bottom: 1px solid var(--color-border, #e8e8ed);
+    overflow-x: auto;
+    flex-shrink: 0;
+    padding: 0 8px;
+}
+
+.devtools-tab {
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary, #666);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+    user-select: none;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+}
+
+.devtools-tab:hover {
+    color: var(--color-text-primary, #1A1A2E);
+    background: var(--color-bg-hover, #f0f0f4);
+}
+
+.devtools-tab.active {
+    color: #22c55e;
+    border-bottom-color: #22c55e;
+}
+
+/* --- 面板内容区域 --- */
+.devtools-panels {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.devtools-panel {
+    display: none;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.devtools-panel.active {
+    display: block;
+}
+
+/* ============================================================
+   通用调试 UI 组件
+   ============================================================ */
+
+/* --- 终端模拟 --- */
+.devtools-terminal {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.devtools-terminal-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background: #181825;
+    border-bottom: 1px solid #313244;
+}
+
+.devtools-terminal-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.devtools-terminal-dot.red { background: #f38ba8; }
+.devtools-terminal-dot.yellow { background: #f9e2af; }
+.devtools-terminal-dot.green { background: #a6e3a1; }
+
+.devtools-terminal-title {
+    margin-left: 8px;
+    font-size: 11px;
+    color: #6c7086;
+}
+
+.devtools-terminal-output {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.devtools-terminal-output .prompt {
+    color: #89b4fa;
+}
+
+.devtools-terminal-output .error {
+    color: #f38ba8;
+}
+
+.devtools-terminal-output .success {
+    color: #a6e3a1;
+}
+
+.devtools-terminal-output .info {
+    color: #89dceb;
+}
+
+.devtools-terminal-input-row {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: #181825;
+    border-top: 1px solid #313244;
+}
+
+.devtools-terminal-prompt {
+    color: #89b4fa;
+    margin-right: 6px;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.devtools-terminal-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #cdd6f4;
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+}
+
+.devtools-terminal-input::placeholder {
+    color: #585b70;
+}
+
+/* --- 调试卡片 --- */
+.devtools-card {
+    background: var(--color-bg-primary, #fff);
+    border-radius: 8px;
+    border: 1px solid var(--color-border, #e8e8ed);
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+.devtools-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--color-border, #e8e8ed);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary, #1A1A2E);
+}
+
+.devtools-card-body {
+    padding: 12px 14px;
+}
+
+/* --- JSON 查看器 --- */
+.devtools-json-viewer {
+    background: #1e1e2e;
+    color: #cdd6f4;
+    font-family: 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 12px;
+    border-radius: 6px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 400px;
+}
+
+.devtools-json-viewer .key {
+    color: #89b4fa;
+}
+
+.devtools-json-viewer .string {
+    color: #a6e3a1;
+}
+
+.devtools-json-viewer .number {
+    color: #fab387;
+}
+
+.devtools-json-viewer .boolean {
+    color: #cba6f7;
+}
+
+.devtools-json-viewer .null {
+    color: #6c7086;
+}
+
+/* --- 状态指示器 --- */
+.devtools-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    padding: 3px 10px;
+    border-radius: 12px;
+}
+
+.devtools-status.online {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.devtools-status.offline {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.devtools-status.warning {
+    background: #fef9c3;
+    color: #854d0e;
+}
+
+.devtools-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.devtools-status-dot.online { background: #22c55e; }
+.devtools-status-dot.offline { background: #ef4444; }
+.devtools-status-dot.warning { background: #eab308; }
+
+/* --- 数据表格 --- */
+.devtools-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.devtools-table th {
+    text-align: left;
+    padding: 8px 10px;
+    background: var(--color-bg-tertiary, #f0f0f4);
+    border-bottom: 2px solid var(--color-border, #e8e8ed);
+    font-weight: 600;
+    color: var(--color-text-secondary, #666);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.devtools-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--color-border, #e8e8ed);
+    color: var(--color-text-primary, #1A1A2E);
+}
+
+.devtools-table tr:hover td {
+    background: var(--color-bg-hover, #f5f5f8);
+}
+
+/* --- 表单控件 (调试风格) --- */
+.devtools-input {
+    background: var(--color-bg-secondary, #f5f5f8);
+    border: 1px solid var(--color-border, #e8e8ed);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--color-text-primary, #1A1A2E);
+    font-family: 'Consolas', monospace;
+    outline: none;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.devtools-input:focus {
+    border-color: #22c55e;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15);
+}
+
+.devtools-btn {
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--color-border, #e8e8ed);
+    background: var(--color-bg-primary, #fff);
+    color: var(--color-text-primary, #1A1A2E);
+    transition: background 0.15s;
+}
+
+.devtools-btn:hover {
+    background: var(--color-bg-hover, #f0f0f4);
+}
+
+.devtools-btn.primary {
+    background: #22c55e;
+    color: #fff;
+    border-color: #22c55e;
+}
+
+.devtools-btn.primary:hover {
+    background: #16a34a;
+}
+
+.devtools-btn.danger {
+    background: #ef4444;
+    color: #fff;
+    border-color: #ef4444;
+}
+
+.devtools-btn.danger:hover {
+    background: #dc2626;
+}
+
+.devtools-btn.small {
+    padding: 3px 8px;
+    font-size: 11px;
+}
+
+/* --- 日志条目 --- */
+.devtools-log-entry {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    line-height: 1.5;
+    border-bottom: 1px solid var(--color-border-subtle, #f0f0f4);
+}
+
+.devtools-log-time {
+    color: #6c7086;
+    flex-shrink: 0;
+    width: 70px;
+}
+
+.devtools-log-level {
+    flex-shrink: 0;
+    width: 48px;
+    font-weight: 600;
+}
+
+.devtools-log-level.debug { color: #6c7086; }
+.devtools-log-level.info { color: #89b4fa; }
+.devtools-log-level.warn { color: #f9e2af; }
+.devtools-log-level.error { color: #f38ba8; }
+
+.devtools-log-msg {
+    flex: 1;
+    color: var(--color-text-primary, #1A1A2E);
+    word-break: break-all;
+}
+
+/* --- HTTP 请求/响应卡片 --- */
+.devtools-http-entry {
+    border: 1px solid var(--color-border, #e8e8ed);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    overflow: hidden;
+}
+
+.devtools-http-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-family: 'Consolas', monospace;
+    cursor: pointer;
+    background: var(--color-bg-primary, #fff);
+}
+
+.devtools-http-summary:hover {
+    background: var(--color-bg-hover, #f5f5f8);
+}
+
+.devtools-http-method {
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    color: #fff;
+}
+
+.devtools-http-method.get { background: #22c55e; }
+.devtools-http-method.post { background: #3b82f6; }
+.devtools-http-method.put { background: #f59e0b; }
+.devtools-http-method.delete { background: #ef4444; }
+
+.devtools-http-status {
+    font-weight: 600;
+}
+
+.devtools-http-status.success { color: #22c55e; }
+.devtools-http-status.redirect { color: #f59e0b; }
+.devtools-http-status.error { color: #ef4444; }
+
+.devtools-http-path {
+    flex: 1;
+    color: var(--color-text-secondary, #666);
+}
+
+.devtools-http-detail {
+    padding: 8px 10px;
+    border-top: 1px solid var(--color-border, #e8e8ed);
+    background: #1e1e2e;
+    color: #cdd6f4;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    display: none;
+    max-height: 300px;
+    overflow: auto;
+}
+
+.devtools-http-detail.open {
+    display: block;
+}
+
+/* --- 空状态 --- */
+.devtools-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    color: var(--color-text-tertiary, #999);
+    font-size: 13px;
+}
+
+.devtools-empty-icon {
+    font-size: 32px;
+    margin-bottom: 8px;
+    opacity: 0.5;
+}
+
+/* --- 加载动画 --- */
+.devtools-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--color-border, #e8e8ed);
+    border-top-color: #22c55e;
+    border-radius: 50%;
+    animation: devtools-spin 0.6s linear infinite;
+}
+
+@keyframes devtools-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* --- 分割面板 --- */
+.devtools-split {
+    display: flex;
+    gap: 12px;
+    height: 100%;
+}
+
+.devtools-split-left {
+    flex: 1;
+    min-width: 0;
+    overflow: auto;
+}
+
+.devtools-split-right {
+    width: 340px;
+    flex-shrink: 0;
+    overflow: auto;
+    border-left: 1px solid var(--color-border, #e8e8ed);
+    padding-left: 12px;
+}
+
+/* --- 筛选工具栏 --- */
+.devtools-filter-bar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 0;
+    flex-wrap: wrap;
+}
+
+.devtools-filter-bar .devtools-input {
+    width: auto;
+    min-width: 160px;
+}
+
+/* --- 标签 (badge) --- */
+.devtools-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.devtools-badge.green { background: #dcfce7; color: #166534; }
+.devtools-badge.blue { background: #dbeafe; color: #1e40af; }
+.devtools-badge.red { background: #fee2e2; color: #991b1b; }
+.devtools-badge.yellow { background: #fef9c3; color: #854d0e; }
+.devtools-badge.gray { background: #f3f4f6; color: #6b7280; }
+
+/* --- 侧边栏导航按钮 (开发者工具) --- */
+#tab-devtools {
+    position: relative;
+}
+
+#tab-devtools .nav-icon {
+    font-size: 16px;
+}
+
+#tab-devtools .nav-label {
+    font-size: 10px;
+}
+
+/* devtools 通知小圆点 */
+#tab-devtools .devtools-notify-dot {
+    position: absolute;
+    top: 2px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    background: #ef4444;
+    border-radius: 50%;
+    display: none;
+}
+
+#tab-devtools .devtools-notify-dot.show {
+    display: block;
+}

@@ -95,6 +95,16 @@ int AppContext::init(const ClientConfig& config)
         }
     }
 
+    /* 8. 初始化开发者工具引擎 */
+    {
+        auto& engine = devtools::DevToolsEngine::instance();
+        if (engine.init(*this) == 0) {
+            LOG_INFO("开发者工具引擎已初始化");
+        } else {
+            LOG_WARN("开发者工具引擎初始化失败");
+        }
+    }
+
     LOG_INFO("客户端初始化完成");
     return 0;
 }
@@ -116,6 +126,16 @@ int AppContext::run()
     /* 启动本地 HTTP 服务 (端口 9010) */
     if (!http_server_->start(9010)) {
         LOG_WARN("本地HTTP服务启动失败，部分本地功能不可用");
+    }
+
+    /* 注册开发者工具 HTTP 路由和 IPC 处理器 */
+    {
+        auto& engine = devtools::DevToolsEngine::instance();
+        if (engine.is_initialized()) {
+            engine.register_http_routes(*http_server_);
+            engine.register_ipc_handlers(*ipc_);
+            LOG_INFO("开发者工具 HTTP 路由和 IPC 处理器已注册");
+        }
     }
 
     /* 连接服务器 (TLS 强制) */
@@ -178,6 +198,17 @@ void AppContext::stop()
     }
 
     LOG_INFO("客户端正在关闭...");
+
+    /* 关闭开发者工具引擎 */
+    {
+        auto& engine = devtools::DevToolsEngine::instance();
+        if (engine.is_initialized()) {
+            engine.unregister_ipc_handlers(*ipc_);
+            engine.unregister_http_routes(*http_server_);
+            engine.shutdown();
+            LOG_INFO("开发者工具引擎已关闭");
+        }
+    }
 
     plugin_mgr_->stop_all();
     plugin_mgr_->unload_all();
