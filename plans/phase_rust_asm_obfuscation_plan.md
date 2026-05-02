@@ -4,6 +4,7 @@
 > **核心手段**: Rust FFI 安全层 + NASM 汇编私有加密（仅此功能单独使用 ASM）。
 > **算法方向**: 对称流密码 + 自定义 S-Box 置换表 + 多轮混淆，全部 ASM 手写实现。
 > **环境**: NASM 3.01（Windows，PATH 内可用）。
+> **Phase 10 兼容预留**: `Cargo.toml` 同时支持 `staticlib` + `cdylib`，`lib.rs` FFI 导出兼容 JNI。
 
 ---
 
@@ -189,7 +190,7 @@ client/security/
 │   ├── lib.rs                    ← 修改: 导出新 FFI 函数
 │   └── ...
 ├── build.rs                      ← NEW: NASM 构建脚本
-├── Cargo.toml                    ← 修改: 添加 build = "build.rs"
+├── Cargo.toml                    ← 修改: 添加 build = "build.rs" + crate-type 兼容 staticlib+cdylib
 └── include/
     └── chrono_client_security.h  ← 修改: 添加 obfuscate/deobfuscate 声明
 ```
@@ -309,11 +310,11 @@ asm_obfuscate()  ← 这是你写的 NASM 代码
 | **P2** | 创建 `build.rs` — NASM 编译脚本（框架代码） | [`client/security/build.rs`](client/security/build.rs) | 我来 |
 | **P3** | 创建 `asm_bridge.rs` — Rust → ASM FFI 桥接（框架代码） | [`client/security/src/asm_bridge.rs`](client/security/src/asm_bridge.rs) | 我来 |
 | **P4** | 修改 `crypto.rs` — 集成 asm_bridge 调用 | [`client/security/src/crypto.rs`](client/security/src/crypto.rs) | 我来 |
-| **P5** | 修改 `lib.rs` — 导出 `rust_client_obfuscate` FFI | [`client/security/src/lib.rs`](client/security/src/lib.rs) | 我来 |
-| **P6** | 修改 `Cargo.toml` — 添加 `build = "build.rs"` | [`client/security/Cargo.toml`](client/security/Cargo.toml) | 我来 |
+| **P5** | 修改 `lib.rs` — 导出 `rust_client_obfuscate` FFI（兼容 staticlib + cdylib） | [`client/security/src/lib.rs`](client/security/src/lib.rs) | 我来 |
+| **P6** | 修改 `Cargo.toml` — 添加 `build = "build.rs"` + `crate-type = ["staticlib", "cdylib"]` → Phase 10 兼容预留 | [`client/security/Cargo.toml`](client/security/Cargo.toml) | 我来 |
 | **P7** | 扩展 `CryptoEngine` C++ 侧 — obfuscate/deobfuscate 接口 | [`client/src/security/CryptoEngine.h`](client/src/security/CryptoEngine.h) + [`.cpp`](client/src/security/CryptoEngine.cpp) | 我来 |
 | **P8** | 添加 CLI 测试命令 `cmd_obfuscate.c`（调试用） | [`client/devtools/cli/commands/cmd_obfuscate.c`](client/devtools/cli/commands/cmd_obfuscate.c) | 我来 |
-| **P9** | 更新 `CMakeLists.txt` — 确保 Rust 静态库链接 | [`client/CMakeLists.txt`](client/CMakeLists.txt) | 我来 |
+| **P9** | 更新 `CMakeLists.txt` — 确保 Rust 库链接（NASM 编译走 build.rs，CMake 无需改动） | [`client/CMakeLists.txt`](client/CMakeLists.txt) | 我来 |
 | **P10** | 集成测试 — ASM 加密/解密正确性验证 | 测试脚本 | 我来 |
 
 **你的核心工作**: P1 — 设计并在 `obfuscate.asm` 中实现你的私有算法。
@@ -406,4 +407,19 @@ flowchart LR
 
 ---
 
-*文档版本: v0.2 — 框架讨论版（预留自研算法接口）*
+## 12. Phase 10 兼容预留
+
+[`plans/phase_10_lang_refactor_java_glue.md`](plans/phase_10_lang_refactor_java_glue.md) 计划在近期实施，会对以下文件做修改。本 ASM 混淆计划已提前预留兼容：
+
+| 文件 | ASM 计划设置 | Phase 10 计划设置 | 兼容策略 |
+|------|-------------|------------------|---------|
+| [`Cargo.toml`](client/security/Cargo.toml) | `build = "build.rs"` | `crate-type = ["cdylib"]` | **合并**为 `crate-type = ["staticlib", "cdylib"]`，同时支持两种输出 |
+| [`lib.rs`](client/security/src/lib.rs) | `pub mod asm_bridge;` + `rust_client_obfuscate()` | JNI `#[no_mangle]` 导出 | **共存**，不同模块互不干扰 |
+| [`crypto.rs`](client/security/src/crypto.rs) | `obfuscate_message()` / `deobfuscate_message()` | 无修改 | 无冲突 |
+| [`CryptoEngine.h/.cpp`](client/src/security/CryptoEngine.h) | `obfuscate_message()` 方法 | 无修改 | 无冲突 |
+
+**注意**: Phase 10 实施时需确保 `Cargo.toml` 的 `crate-type` 保持不变（即保留 `"staticlib"` + `"cdylib"` 并存），否则会破坏 C++ 侧通过静态库链接 ASM obfuscate 功能。
+
+---
+
+*文档版本: v0.3 — 框架讨论版（含 Phase 10 兼容预留）*
