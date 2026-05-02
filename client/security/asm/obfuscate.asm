@@ -60,7 +60,7 @@ ksa_init:
     ; 计算密钥索引: idx = (i * multiplier) % 64
     mov     edx, ecx                 ; edx = i
     cmp     r12d, 0
-    je      .key_idx_done            ; 第 1 轮: i % 64 (即 ecx & 63)
+    je      .key_idx_mod             ; 第 1 轮: i % 64 (即 ecx & 63)
     cmp     r12d, 1
     je      .pass2_key
 
