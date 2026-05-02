@@ -38,6 +38,7 @@ extern int init_cmd_disconnect(void);
 
 /* 安全与诊断 */
 extern int init_cmd_tls_info(void);
+extern int init_cmd_gen_cert(void);
 extern int init_cmd_json_parse(void);
 extern int init_cmd_json_pretty(void);
 extern int init_cmd_trace(void);
@@ -80,6 +81,7 @@ void init_commands(void)
 
     /* 安全与诊断 */
     init_cmd_tls_info();
+    init_cmd_gen_cert();
     init_cmd_json_parse();
     init_cmd_json_pretty();
     init_cmd_trace();
