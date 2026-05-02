@@ -158,8 +158,25 @@ int WebViewManager::load_html(const std::string& html_path)
 {
     LOG_INFO("加载前端页面: %s", html_path.c_str());
     /* Phase 2: 使用 WebView2 SDK 加载本地文件:
-     *   wil::com_ptr<ICoreWebView2> webview;
-     *   webview->Navigate(html_path.c_str());
+     *
+     *   // 创建 WebView2 环境 (启用自签名证书信任)
+     *   auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
+     *   // ── HTTPS 迁移: 允许自签名证书 (开发模式) ──
+     *   // 生产环境应移除以下标志并使用受信任的 CA 证书
+     *   options->put_AdditionalBrowserArguments(
+     *       L"--ignore-certificate-errors --disable-features=AutoupgradeMixedContent");
+     *
+     *   CreateCoreWebView2EnvironmentWithOptions(
+     *       nullptr, nullptr, options.Get(),
+     *       Microsoft::WRL::Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>(
+     *           [this, html_path](HRESULT, ICoreWebView2Environment* env) -> HRESULT {
+     *               env->CreateCoreWebView2Controller(hwnd_, ...);
+     *               // webview->Navigate(html_path.c_str());
+     *               return S_OK;
+     *           }).Get());
+     *
+     * 注意: --ignore-certificate-errors 会降低安全性，
+     *       仅用于开发/调试环境。
      */
     (void)html_path;
     return 0;
@@ -168,7 +185,11 @@ int WebViewManager::load_html(const std::string& html_path)
 int WebViewManager::navigate(const std::string& url)
 {
     LOG_DEBUG("导航到: %s", url.c_str());
-    /* Phase 2: webview->Navigate(url.c_str()); */
+    /* Phase 2: 导航到 HTTPS URL
+     *   由于使用了 --ignore-certificate-errors，
+     *   自签名证书的 HTTPS 页面可以正常加载。
+     *   webview->Navigate(url.c_str());
+     */
     (void)url;
     return 0;
 }

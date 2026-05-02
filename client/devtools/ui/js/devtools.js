@@ -2,7 +2,7 @@
  * devtools.js — 开发者工具前端模块
  *
  * 提供 8 个图形化调试面板，通过 ChronoExtensions 注册，
- * 并通过 HTTP API (http://127.0.0.1:9010/api/devtools/*) 与 C++ 后端通信。
+ * 并通过 HTTPS API (https://127.0.0.1:9010/api/devtools/*) 与 C++ 后端通信。
  *
  * 面板列表：
  *   1. 命令控制台 (Command Console)
@@ -55,7 +55,7 @@
             return ChronoExtensions.http(method, API_PREFIX + path, data);
         }
         // 降级：直接 fetch
-        var url = 'http://127.0.0.1:9010' + API_PREFIX + path;
+        var url = 'https://127.0.0.1:9010' + API_PREFIX + path;
         var opts = {
             method: method,
             headers: { 'Content-Type': 'application/json' }
@@ -907,7 +907,7 @@
                 fetchOpts.body = body;
             }
 
-            var url = 'http://127.0.0.1:9010' + p;
+            var url = 'https://127.0.0.1:9010' + p;
 
             fetch(url, fetchOpts)
                 .then(function (resp) {

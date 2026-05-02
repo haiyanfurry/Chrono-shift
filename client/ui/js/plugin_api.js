@@ -147,7 +147,7 @@
          * @returns {Promise<object>}
          */
         http: function (method, path, data) {
-            var url = 'http://127.0.0.1:9010' + path;
+            var url = 'https://127.0.0.1:9010' + path;
             var options = {
                 method: method,
                 headers: { 'Content-Type': 'application/json' }

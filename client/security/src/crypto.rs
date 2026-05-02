@@ -9,6 +9,8 @@ use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
+use crate::sanitizer;
+
 /// 生成 E2E 密钥对（返回公钥 base64）
 /// 需要调用 rust_client_free_string 释放
 #[no_mangle]
@@ -19,6 +21,10 @@ pub extern "C" fn rust_client_generate_keypair() -> *mut c_char {
 }
 
 /// 使用对方的公钥加密消息（E2E）
+///
+/// 安全校验:
+/// - 明文长度在 MESSAGE_MAX_LEN 内
+/// - 公钥是合法 Base64
 #[no_mangle]
 pub extern "C" fn rust_client_encrypt_e2e(
     plaintext: *const c_char,
@@ -36,6 +42,16 @@ pub extern "C" fn rust_client_encrypt_e2e(
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
     };
+
+    // ── 安全校验：消息长度 ──
+    if !sanitizer::validate_message_length(text) {
+        return ptr::null_mut(); // 消息过长或为空
+    }
+
+    // ── 安全校验：公钥 Base64 格式 ──
+    if !sanitizer::validate_token(key_str) {
+        return ptr::null_mut(); // 公钥包含非法字符
+    }
 
     let key_bytes = match BASE64.decode(key_str) {
         Ok(b) => b,
@@ -59,6 +75,10 @@ pub extern "C" fn rust_client_encrypt_e2e(
 }
 
 /// 使用自己的私钥解密消息（E2E）
+///
+/// 安全校验:
+/// - 密文 Base64 格式校验
+/// - 私钥 Base64 格式校验
 #[no_mangle]
 pub extern "C" fn rust_client_decrypt_e2e(
     ciphertext_b64: *const c_char,
@@ -76,6 +96,11 @@ pub extern "C" fn rust_client_decrypt_e2e(
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
     };
+
+    // ── 安全校验：Base64 格式 ──
+    if !sanitizer::validate_token(ct_str) || !sanitizer::validate_token(key_str) {
+        return ptr::null_mut();
+    }
 
     let key_bytes = match BASE64.decode(key_str) {
         Ok(b) => b,

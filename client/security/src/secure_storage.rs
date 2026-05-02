@@ -8,6 +8,8 @@ use std::sync::OnceLock;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 
+use crate::sanitizer;
+
 static STORAGE_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 /// 密钥文件路径
@@ -23,7 +25,15 @@ fn get_data_path() -> PathBuf {
 }
 
 /// 初始化安全存储
+///
+/// 安全校验:
+/// - `app_data_path` 不能包含路径遍历模式
 pub fn init_secure_storage(app_data_path: &str) -> Result<(), String> {
+    // ── 安全校验：路径遍历防护 ──
+    if !sanitizer::is_safe_path(app_data_path) {
+        return Err("路径包含危险模式（遍历/空字节等）".to_string());
+    }
+
     let path = PathBuf::from(app_data_path).join("secure");
     fs::create_dir_all(&path).map_err(|e| format!("Failed to create secure dir: {}", e))?;
     

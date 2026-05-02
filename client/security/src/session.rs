@@ -9,6 +9,8 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 use rand::RngCore;
 
+use crate::sanitizer;
+
 /// 会话状态
 struct Session {
     user_id: String,
@@ -27,6 +29,9 @@ static SESSION: Lazy<Mutex<Session>> = Lazy::new(|| {
 });
 
 /// 保存会话令牌
+///
+/// 在保存前校验 username 和 token 的合法性。
+/// 任何校验失败返回 -1，不会污染会话状态。
 #[no_mangle]
 pub extern "C" fn rust_session_save(
     user_id: *const c_char,
@@ -40,6 +45,17 @@ pub extern "C" fn rust_session_save(
     let uid = unsafe { CStr::from_ptr(user_id) }.to_str().unwrap_or("");
     let name = unsafe { CStr::from_ptr(username) }.to_str().unwrap_or("");
     let t = unsafe { CStr::from_ptr(token) }.to_str().unwrap_or("");
+
+    // ── 安全校验 ──
+    if !sanitizer::validate_username(name) {
+        return -1; // 非法用户名
+    }
+    if !sanitizer::validate_uid(uid) {
+        return -1; // 非法 UID
+    }
+    if !sanitizer::validate_token(t) {
+        return -1; // 非法 Token
+    }
 
     let mut session = SESSION.lock().unwrap();
     session.user_id = uid.to_string();

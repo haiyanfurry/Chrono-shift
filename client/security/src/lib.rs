@@ -2,6 +2,7 @@
 //! 通过 extern "C" FFI 导出函数供 C99 客户端宿主调用
 
 pub mod crypto;
+pub mod sanitizer;
 pub mod secure_storage;
 pub mod session;
 
