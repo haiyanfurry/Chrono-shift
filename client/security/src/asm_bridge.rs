@@ -104,6 +104,16 @@ mod tests {
         assert!(deobfuscate(&[], key).is_err());
     }
 
+    /// 测试单次 ASM 调用 (仅加密)
+    #[test]
+    fn test_single_obfuscate() {
+        let data = b"Hello single test";
+        let key = b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let encrypted = obfuscate(data, key).expect("单次加密失败");
+        assert_eq!(encrypted.len(), data.len(), "密文长度应与明文相同");
+        assert_ne!(encrypted, data, "密文不应与明文相同");
+    }
+
     /// 测试不同密钥产生不同密文
     #[test]
     fn test_different_keys() {

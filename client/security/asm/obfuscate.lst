@@ -1,0 +1,320 @@
+     1                                  ; client/security/asm/obfuscate.asm
+     2                                  ; NASM 3.01 — win64 COFF
+     3                                  ; ChronoStream v1 — 自研对称流密码
+     4                                  ;
+     5                                  ; ╔══════════════════════════════════════════════════════════════╗
+     6                                  ; ║  算法: 对称流密码 + 运行时动态 S-Box + 8 轮混淆             ║
+     7                                  ; ║                                                            ║
+     8                                  ; ║  结构:                                                      ║
+     9                                  ; ║    1. KSA — 3 轮 Fisher-Yates, 64 字节密钥动态生成 S-Box   ║
+    10                                  ; ║    2. 状态初始化 — 8 字节内部状态 (key[8:16])              ║
+    11                                  ; ║    3. 密钥流生成 — 8 轮级联 S-Box 查找 + 状态反馈           ║
+    12                                  ; ║    4. 输出 — output[i] = input[i] XOR keystream[i]          ║
+    13                                  ; ║                                                            ║
+    14                                  ; ║  密钥: 64 字节 (512 位), R8 传入                           ║
+    15                                  ; ║  接口: RCX=data, RDX=len, R8=key(64B), R9=out → RAX=0/-1  ║
+    16                                  ; ╚══════════════════════════════════════════════════════════════╝
+    17                                  
+    18                                  section .data
+    19                                      ; S-Box 缓冲区 — 运行时由密钥动态生成
+    20                                      ; 256 字节, 双射置换表
+    21 00000000 00<rep 100h>                sbox:   times 256 db 0
+    22                                  
+    23                                      ; 8 字节内部状态缓冲区
+    24 00000100 00<rep 8h>                  state:  times 8 db 0
+    25                                  
+    26                                  section .text
+    27                                  
+    28                                  ; ============================================================
+    29                                  ; KSA — 密钥调度初始化 (Key Scheduling Algorithm)
+    30                                  ; 功能: 用 64 字节密钥动态生成 256 字节 S-Box + 8 字节状态
+    31                                  ; 输入: R8 = 64 字节密钥指针
+    32                                  ; 输出: sbox[] 已初始化, state[] 已填充
+    33                                  ; 破坏: RAX, RBX, RCX, RDX, R10, R11, R12
+    34                                  ; ============================================================
+    35                                  ksa_init:
+    36                                      ; ── 阶段 1: 初始化 S-Box 为单位映射 [0, 1, 2, ..., 255] ──
+    37 00000000 31C0                        xor     eax, eax
+    38 00000002 4C8D1D(00000000)            lea     r11, [rel sbox]
+    39                                  .init_loop:
+    40 00000009 41880403                    mov     byte [r11 + rax], al
+    41 0000000D FEC0                        inc     al
+    42 0000000F 75F8                        jnz     .init_loop
+    43                                  
+    44                                      ; ── 阶段 2: 3 轮 Fisher-Yates 洗牌 ──
+    45                                      ;   第 1 轮: key[i % 64]
+    46                                      ;   第 2 轮: key[(i * 3) % 64]
+    47                                      ;   第 3 轮: key[(i * 7) % 64]
+    48 00000011 4531E4                      xor     r12d, r12d          ; r12 = pass 计数器 (0/1/2)
+    49 00000014 4C8D15(00000000)            lea     r10, [rel sbox]     ; r10 = sbox 基址
+    50                                  
+    51                                  .pass_loop:
+    52 0000001B 31DB                        xor     ebx, ebx            ; j = 0
+    53 0000001D 31C9                        xor     ecx, ecx            ; i = 0
+    54                                  
+    55                                  .inner_loop:
+    56 0000001F 410FB6040A                  movzx   eax, byte [r10 + rcx]   ; al = sbox[i]
+    57 00000024 01D8                        add     eax, ebx                 ; al += j
+    58 00000026 25FF000000                  and     eax, 0xFF                ; & 0xFF
+    59                                  
+    60                                      ; 计算密钥索引: idx = (i * multiplier) % 64
+    61 0000002B 89CA                        mov     edx, ecx                 ; edx = i
+    62 0000002D 4183FC00                    cmp     r12d, 0
+    63 00000031 740E                        je      .key_idx_mod             ; 第 1 轮: i % 64 (即 ecx & 63)
+    64 00000033 4183FC01                    cmp     r12d, 1
+    65 00000037 7405                        je      .pass2_key
+    66                                  
+    67                                      ; 第 3 轮: (i * 7) % 64
+    68 00000039 6BD207                      imul    edx, 7
+    69 0000003C EB03                        jmp     .key_idx_mod
+    70                                  
+    71                                  .pass2_key:
+    72                                      ; 第 2 轮: (i * 3) % 64
+    73 0000003E 6BD203                      imul    edx, 3
+    74                                  
+    75                                  .key_idx_mod:
+    76 00000041 83E23F                      and     edx, 63
+    77                                  
+    78                                  .key_idx_done:
+    79 00000044 410FB60410                  movzx   eax, byte [r8 + rdx]     ; al = key[idx]
+    80 00000049 01C3                        add     ebx, eax                 ; j += key[idx]
+    81 0000004B 81E3FF000000                and     ebx, 0xFF                ; j &= 0xFF
+    82                                  
+    83                                      ; swap(sbox[i], sbox[j])
+    84 00000051 410FB6040A                  movzx   eax, byte [r10 + rcx]    ; al = sbox[i]
+    85 00000056 410FB6141A                  movzx   edx, byte [r10 + rbx]    ; dl = sbox[j]
+    86 0000005B 4188140A                    mov     byte [r10 + rcx], dl     ; sbox[i] = sbox[j]
+    87 0000005F 4188041A                    mov     byte [r10 + rbx], al     ; sbox[j] = orig sbox[i]
+    88                                  
+    89 00000063 FFC1                        inc     ecx
+    90 00000065 75B8                        jnz     .inner_loop              ; i = 0..255
+    91                                  
+    92 00000067 41FFC4                      inc     r12d
+    93 0000006A 4183FC03                    cmp     r12d, 3
+    94 0000006E 7CAB                        jl      .pass_loop
+    95                                  
+    96                                      ; ── 阶段 3: 初始化 8 字节内部状态 (key[8:16]) ──
+    97 00000070 4C8D1D(00010000)            lea     r11, [rel state]
+    98 00000077 498B4008                    mov     rax, [r8 + 8]            ; 加载 key[8..15] 到 rax
+    99 0000007B 498903                      mov     [r11], rax                ; 写入 state[0..7]
+   100                                  
+   101 0000007E C3                          ret
+   102                                  
+   103                                  ; ============================================================
+   104                                  ; gen_keystream — 生成 1 字节密钥流 (8 轮混淆)
+   105                                  ; 功能: 更新 8 字节状态, 生成 1 字节密钥流
+   106                                  ; 输入: R10 = sbox 基址, R11 = state 基址
+   107                                  ; 输出: AL = 1 字节密钥流
+   108                                  ; 破坏: RAX, RDX
+   109                                  ; ============================================================
+   110                                  gen_keystream:
+   111                                      ; ── 更新 8 字节状态 ──
+   112                                      ; state[0] = (state[0] + 1) & 0xFF
+   113 0000007F 410FB603                    movzx   eax, byte [r11]
+   114 00000083 FEC0                        inc     al
+   115 00000085 418803                      mov     byte [r11], al
+   116                                  
+   117                                      ; state[1] = sbox[(state[1] + state[0]) & 0xFF]
+   118 00000088 410FB64301                  movzx   eax, byte [r11 + 1]
+   119 0000008D 410FB613                    movzx   edx, byte [r11]          ; state[0] (已更新)
+   120 00000091 01D0                        add     eax, edx
+   121 00000093 25FF000000                  and     eax, 0xFF
+   122 00000098 410FB60402                  movzx   eax, byte [r10 + rax]
+   123 0000009D 41884301                    mov     byte [r11 + 1], al
+   124                                  
+   125                                      ; state[2] = (state[2] + state[1]) & 0xFF
+   126 000000A1 410FB64302                  movzx   eax, byte [r11 + 2]
+   127 000000A6 410FB65301                  movzx   edx, byte [r11 + 1]
+   128 000000AB 01D0                        add     eax, edx
+   129 000000AD 25FF000000                  and     eax, 0xFF
+   130 000000B2 41884302                    mov     byte [r11 + 2], al
+   131                                  
+   132                                      ; state[3] = sbox[(state[3] + state[2]) & 0xFF]
+   133 000000B6 410FB64303                  movzx   eax, byte [r11 + 3]
+   134 000000BB 410FB65302                  movzx   edx, byte [r11 + 2]
+   135 000000C0 01D0                        add     eax, edx
+   136 000000C2 25FF000000                  and     eax, 0xFF
+   137 000000C7 410FB60402                  movzx   eax, byte [r10 + rax]
+   138 000000CC 41884303                    mov     byte [r11 + 3], al
+   139                                  
+   140                                      ; state[4] = (state[4] + state[3]) & 0xFF
+   141 000000D0 410FB64304                  movzx   eax, byte [r11 + 4]
+   142 000000D5 410FB65303                  movzx   edx, byte [r11 + 3]
+   143 000000DA 01D0                        add     eax, edx
+   144 000000DC 25FF000000                  and     eax, 0xFF
+   145 000000E1 41884304                    mov     byte [r11 + 4], al
+   146                                  
+   147                                      ; state[5] = sbox[(state[5] + state[4]) & 0xFF]
+   148 000000E5 410FB64305                  movzx   eax, byte [r11 + 5]
+   149 000000EA 410FB65304                  movzx   edx, byte [r11 + 4]
+   150 000000EF 01D0                        add     eax, edx
+   151 000000F1 25FF000000                  and     eax, 0xFF
+   152 000000F6 410FB60402                  movzx   eax, byte [r10 + rax]
+   153 000000FB 41884305                    mov     byte [r11 + 5], al
+   154                                  
+   155                                      ; state[6] = (state[6] + state[5]) & 0xFF
+   156 000000FF 410FB64306                  movzx   eax, byte [r11 + 6]
+   157 00000104 410FB65305                  movzx   edx, byte [r11 + 5]
+   158 00000109 01D0                        add     eax, edx
+   159 0000010B 25FF000000                  and     eax, 0xFF
+   160 00000110 41884306                    mov     byte [r11 + 6], al
+   161                                  
+   162                                      ; state[7] = sbox[(state[7] + state[6]) & 0xFF]
+   163 00000114 410FB64307                  movzx   eax, byte [r11 + 7]
+   164 00000119 410FB65306                  movzx   edx, byte [r11 + 6]
+   165 0000011E 01D0                        add     eax, edx
+   166 00000120 25FF000000                  and     eax, 0xFF
+   167 00000125 410FB60402                  movzx   eax, byte [r10 + rax]
+   168 0000012A 41884307                    mov     byte [r11 + 7], al
+   169                                  
+   170                                      ; ── 8 轮混淆: 生成密钥流字节 ──
+   171                                      ; ks = sbox[state[0]]
+   172 0000012E 410FB603                    movzx   eax, byte [r11]
+   173 00000132 410FB60402                  movzx   eax, byte [r10 + rax]
+   174                                  
+   175                                      ; 轮 2: ks = sbox[(ks + state[2]) & 0xFF]
+   176 00000137 410FB65302                  movzx   edx, byte [r11 + 2]
+   177 0000013C 01D0                        add     eax, edx
+   178 0000013E 25FF000000                  and     eax, 0xFF
+   179 00000143 410FB60402                  movzx   eax, byte [r10 + rax]
+   180                                  
+   181                                      ; 轮 3: ks = sbox[(ks + state[4]) & 0xFF]
+   182 00000148 410FB65304                  movzx   edx, byte [r11 + 4]
+   183 0000014D 01D0                        add     eax, edx
+   184 0000014F 25FF000000                  and     eax, 0xFF
+   185 00000154 410FB60402                  movzx   eax, byte [r10 + rax]
+   186                                  
+   187                                      ; 轮 4: ks = sbox[(ks + state[6]) & 0xFF]
+   188 00000159 410FB65306                  movzx   edx, byte [r11 + 6]
+   189 0000015E 01D0                        add     eax, edx
+   190 00000160 25FF000000                  and     eax, 0xFF
+   191 00000165 410FB60402                  movzx   eax, byte [r10 + rax]
+   192                                  
+   193                                      ; 轮 5: ks = sbox[(ks + state[1]) & 0xFF]
+   194 0000016A 410FB65301                  movzx   edx, byte [r11 + 1]
+   195 0000016F 01D0                        add     eax, edx
+   196 00000171 25FF000000                  and     eax, 0xFF
+   197 00000176 410FB60402                  movzx   eax, byte [r10 + rax]
+   198                                  
+   199                                      ; 轮 6: ks = sbox[(ks + state[3]) & 0xFF]
+   200 0000017B 410FB65303                  movzx   edx, byte [r11 + 3]
+   201 00000180 01D0                        add     eax, edx
+   202 00000182 25FF000000                  and     eax, 0xFF
+   203 00000187 410FB60402                  movzx   eax, byte [r10 + rax]
+   204                                  
+   205                                      ; 轮 7: ks = sbox[(ks + state[5]) & 0xFF]
+   206 0000018C 410FB65305                  movzx   edx, byte [r11 + 5]
+   207 00000191 01D0                        add     eax, edx
+   208 00000193 25FF000000                  and     eax, 0xFF
+   209 00000198 410FB60402                  movzx   eax, byte [r10 + rax]
+   210                                  
+   211                                      ; 轮 8: ks = sbox[(ks + state[7]) & 0xFF]
+   212 0000019D 410FB65307                  movzx   edx, byte [r11 + 7]
+   213 000001A2 01D0                        add     eax, edx
+   214 000001A4 25FF000000                  and     eax, 0xFF
+   215 000001A9 410FB60402                  movzx   eax, byte [r10 + rax]
+   216                                  
+   217 000001AE C3                          ret
+   218                                  
+   219                                  ; ============================================================
+   220                                  ; asm_obfuscate — 对称流密码加密
+   221                                  ; RCX = data ptr, RDX = len, R8 = key(64B), R9 = out
+   222                                  ; Returns: RAX = 0 成功, -1 失败
+   223                                  ; ============================================================
+   224                                  global asm_obfuscate
+   225                                  asm_obfuscate:
+   226                                      ; ── 保存被调用者保存的寄存器 ──
+   227 000001AF 53                          push    rbx
+   228 000001B0 56                          push    rsi
+   229 000001B1 57                          push    rdi
+   230 000001B2 4154                        push    r12
+   231 000001B4 4155                        push    r13
+   232 000001B6 4156                        push    r14
+   233 000001B8 4157                        push    r15
+   234                                  
+   235                                      ; ── 参数检查 ──
+   236 000001BA 4885D2                      test    rdx, rdx
+   237 000001BD 744D                        jz      .param_error             ; len == 0 → 失败
+   238                                  
+   239 000001BF 4885C9                      test    rcx, rcx
+   240 000001C2 7448                        jz      .param_error             ; data == NULL → 失败
+   241                                  
+   242 000001C4 4D85C0                      test    r8, r8
+   243 000001C7 7443                        jz      .param_error             ; key == NULL → 失败
+   244                                  
+   245 000001C9 4D85C9                      test    r9, r9
+   246 000001CC 743E                        jz      .param_error             ; out == NULL → 失败
+   247                                  
+   248                                      ; ── 保存参数到被调用者保存的寄存器 ──
+   249                                      ; 注意: 不能使用 r12 — ksa_init 会覆盖 r12 (pass 计数器)
+   250                                      ;       rsi/rdi/r13/r14/r15 不受 ksa_init 影响
+   251 000001CE 4889CE                      mov     rsi, rcx                 ; rsi = data ptr
+   252 000001D1 4989D5                      mov     r13, rdx                 ; r13 = data length
+   253 000001D4 4D89C6                      mov     r14, r8                  ; r14 = key ptr (64 bytes)
+   254 000001D7 4D89CF                      mov     r15, r9                  ; r15 = out ptr
+   255                                  
+   256                                      ; ── KSA: 初始化 S-Box 和状态 ──
+   257                                      ; 注意: ksa_init 使用 r8 作为 key ptr
+   258 000001DA E821FEFFFF                  call    ksa_init
+   259                                  
+   260                                      ; ── 加密循环: 逐字节生成密钥流 XOR ──
+   261 000001DF 4C8D15(00000000)            lea     r10, [rel sbox]          ; r10 = sbox 基址
+   262 000001E6 4C8D1D(00010000)            lea     r11, [rel state]         ; r11 = state 基址
+   263 000001ED 31C9                        xor     ecx, ecx                 ; rcx = 位置计数器
+   264                                  
+   265                                  .enc_loop:
+   266                                      ; 检查是否处理完所有字节
+   267 000001EF 4C39E9                      cmp     rcx, r13
+   268 000001F2 7314                        jae     .done
+   269                                  
+   270                                      ; 生成 1 字节密钥流
+   271 000001F4 E886FEFFFF                  call    gen_keystream            ; al = keystream byte
+   272                                  
+   273                                      ; XOR 密钥流到输入字节
+   274 000001F9 0FB6140E                    movzx   edx, byte [rsi + rcx]    ; dl = data[rcx]  (rsi 不受 ksa_init 影响)
+   275 000001FD 31C2                        xor     edx, eax                 ; dl ^= keystream
+   276 000001FF 4188140F                    mov     byte [r15 + rcx], dl     ; out[rcx] = result
+   277                                  
+   278 00000203 48FFC1                      inc     rcx                      ; 位置 +1
+   279 00000206 EBE7                        jmp     .enc_loop
+   280                                  
+   281                                      ; ── 成功返回 ──
+   282                                  .done:
+   283 00000208 31C0                        xor     eax, eax                 ; RAX = 0 (成功)
+   284 0000020A EB05                        jmp     .cleanup
+   285                                  
+   286                                  .param_error:
+   287 0000020C B8FFFFFFFF                  mov     eax, -1                  ; RAX = -1 (失败)
+   288                                  
+   289                                  .cleanup:
+   290                                      ; ── 密钥清理: 清零 S-Box 和状态（防内存 dump） ──
+   291                                      ; 仅当成功加密时才做清理（避免在出错时破坏其他数据）
+   292 00000211 83F800                      cmp     eax, 0
+   293 00000214 751E                        jne     .skip_cleanup
+   294                                  
+   295 00000216 488D3D(00000000)            lea     rdi, [rel sbox]
+   296 0000021D 31C0                        xor     eax, eax
+   297 0000021F B900010000                  mov     ecx, 256
+   298 00000224 F3AA                        rep     stosb                    ; 清零 sbox[256]
+   299                                  
+   300 00000226 488D3D(00010000)            lea     rdi, [rel state]
+   301 0000022D B908000000                  mov     ecx, 8
+   302 00000232 F3AA                        rep     stosb                    ; 清零 state[8]
+   303                                  
+   304                                  .skip_cleanup:
+   305 00000234 415F                        pop     r15
+   306 00000236 415E                        pop     r14
+   307 00000238 415D                        pop     r13
+   308 0000023A 415C                        pop     r12
+   309 0000023C 5F                          pop     rdi
+   310 0000023D 5E                          pop     rsi
+   311 0000023E 5B                          pop     rbx
+   312 0000023F C3                          ret
+   313                                  
+   314                                  ; ============================================================
+   315                                  ; asm_deobfuscate — 对称流密码解密
+   316                                  ; 对称流密码: 解密 == 加密
+   317                                  ; ============================================================
+   318                                  global asm_deobfuscate
+   319                                  asm_deobfuscate:
+   320 00000240 E96AFFFFFF                  jmp     asm_obfuscate
