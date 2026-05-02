@@ -123,6 +123,34 @@ int AppContext::run()
         return 1;
     }
 
+    /* ── HTTPS 配置: 自签名证书自动检测 ── */
+    {
+        const char* cert_dir = "./certs";
+        std::string cert_file = std::string(cert_dir) + "/cert.pem";
+        std::string key_file  = std::string(cert_dir) + "/key.pem";
+
+        FILE* f_cert = fopen(cert_file.c_str(), "rb");
+        FILE* f_key  = fopen(key_file.c_str(), "rb");
+
+        if (f_cert && f_key) {
+            fclose(f_cert);
+            fclose(f_key);
+            http_server_->set_tls_cert_paths(cert_file, key_file);
+            http_server_->set_use_https(true);
+            LOG_INFO("HTTPS 模式: 已加载自签名证书 (%s, %s)",
+                     cert_file.c_str(), key_file.c_str());
+        } else {
+            if (f_cert) fclose(f_cert);
+            if (f_key)  fclose(f_key);
+            LOG_WARN("未找到自签名证书文件 (%s, %s)", cert_file.c_str(), key_file.c_str());
+            LOG_WARN("请运行以下命令生成本地开发证书:");
+            LOG_WARN("  Windows: gen_cert.bat");
+            LOG_WARN("  Unix:    ./gen_cert.sh");
+            LOG_WARN("  或 CLI:  chrono-devtools gen-cert");
+            LOG_WARN("本地 HTTP 服务将以明文 HTTP 模式运行 (仅开发环境)");
+        }
+    }
+
     /* 启动本地 HTTP 服务 (端口 9010) */
     if (!http_server_->start(9010)) {
         LOG_WARN("本地HTTP服务启动失败，部分本地功能不可用");
