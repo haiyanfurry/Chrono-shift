@@ -10,6 +10,8 @@
 
 #include <cstdint>
 #include <string>
+#include <functional>
+#include <unordered_map>
 #include <atomic>
 #include <thread>
 
@@ -41,6 +43,17 @@ public:
 
     /** 监听队列长度 */
     static constexpr int kListenBacklog = 10;
+
+    /** 路由处理器类型 (fd, path, method, body) -> void */
+    using HttpHandler = std::function<void(SOCKET fd, const std::string& path,
+                                           const std::string& method,
+                                           const std::string& body)>;
+
+    // === 预留路由前缀 (扩展/插件/AI 使用) ===
+    static constexpr const char* kPluginRoutePrefix   = "/api/plugins/";    // 插件路由
+    static constexpr const char* kExtensionRoutePrefix = "/api/ext/";       // 扩展路由
+    static constexpr const char* kAIRoutePrefix        = "/api/ai/";        // AI 路由
+    static constexpr const char* kDevToolRoutePrefix   = "/api/devtools/";  // 开发者工具路由
 
     ClientHttpServer();
     ~ClientHttpServer();
@@ -79,6 +92,34 @@ public:
      */
     uint16_t get_port() const;
 
+    // ============================================================
+    // 动态路由注册 (扩展/插件/AI 接口)
+    // ============================================================
+
+    /**
+     * 注册自定义路由处理器
+     * @param path_prefix  路由前缀 (如 "/api/plugins/")
+     * @param handler      处理回调 (fd, path, method, body)
+     * @return 0=成功, -1=已达最大路由数
+     */
+    int register_route(const std::string& path_prefix, HttpHandler handler);
+
+    /**
+     * 注销路由处理器
+     * @param path_prefix 路由前缀
+     */
+    void unregister_route(const std::string& path_prefix);
+
+    /**
+     * 检查路径是否匹配预留路由前缀
+     * @param path HTTP 请求路径
+     * @return true 如果是预留路由
+     */
+    bool is_reserved_route(const std::string& path) const;
+
+    /** 最大动态路由数 */
+    static constexpr size_t kMaxDynamicRoutes = 64;
+
 private:
     // ============================================================
     // HTTP 处理
@@ -115,6 +156,11 @@ private:
     /** GET /api/local/status */
     void handle_local_status(SOCKET fd);
 
+    /** 分发到动态路由 */
+    bool dispatch_dynamic_route(SOCKET fd, const std::string& path,
+                                const std::string& method,
+                                const std::string& body);
+
     /** 404 */
     void handle_not_found(SOCKET fd);
 
@@ -133,6 +179,9 @@ private:
 
     /** 服务线程 */
     std::thread server_thread_;
+
+    /** 动态路由表 (path_prefix -> handler) */
+    std::unordered_map<std::string, HttpHandler> dynamic_routes_;
 };
 
 } // namespace app

@@ -21,6 +21,9 @@
 #include "WebViewManager.h"
 #include "ClientHttpServer.h"
 #include "Updater.h"
+#include "../plugin/PluginManager.h"
+#include "../ai/AIProvider.h"
+#include "../ai/AIChatSession.h"
 
 namespace chrono {
 namespace client {
@@ -80,6 +83,9 @@ public:
     WebViewManager&         webview()           { return *webview_; }
     ClientHttpServer&       http_server()       { return *http_server_; }
     Updater&                updater()           { return *updater_; }
+    plugin::PluginManager&  plugin_mgr()        { return *plugin_mgr_; }
+    ai::AIProvider&         ai_provider()        { return *ai_provider_; }
+    ai::AIChatSession&      ai_session()         { return *ai_session_; }
 
 private:
     AppContext();
@@ -97,6 +103,9 @@ private:
     std::unique_ptr<WebViewManager>         webview_;
     std::unique_ptr<ClientHttpServer>       http_server_;
     std::unique_ptr<Updater>                updater_;
+    std::unique_ptr<plugin::PluginManager>  plugin_mgr_;
+    std::unique_ptr<ai::AIProvider>         ai_provider_;
+    std::unique_ptr<ai::AIChatSession>      ai_session_;
 };
 
 } // namespace app

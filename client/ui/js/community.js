@@ -62,8 +62,15 @@ Community.renderGrid = function () {
 
 // === 预览模板 ===
 Community.preview = async function (templateId) {
+    // 验证 templateId 为有效正整数
+    var id = parseInt(templateId, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+        showNotification('无效的模板 ID', 'error');
+        return;
+    }
+
     try {
-        const response = await fetch(`${API.BASE_URL}/api/templates/download?id=${templateId}`);
+        const response = await fetch(API.BASE_URL + '/api/templates/download?id=' + id);
         if (response.ok) {
             const cssText = await response.text();
             ThemeEngine.previewTheme(cssText);

@@ -17,6 +17,7 @@ file(GLOB_RECURSE CLIENT_CPP_SOURCES
     src/app/*.cpp
     src/storage/*.cpp
     src/security/*.cpp
+    src/ai/*.cpp
 )
 
 # === C 源文件 (旧架构，过渡期保留) ===

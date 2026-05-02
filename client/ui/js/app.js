@@ -22,12 +22,61 @@ function showRegister() {
     $('#form-register').classList.add('active');
 }
 
-// === 标签切换（聊天/联系人/社区） ===
+// === 标签切换（聊天/联系人/社区/群组） ===
 function switchTab(tab) {
     // 更新导航按钮状态
     $$('.btn-nav').forEach(b => b.classList.remove('active'));
     const tabBtn = document.getElementById(`tab-${tab}`);
     if (tabBtn) tabBtn.classList.add('active');
+    
+    if (tab === 'groups') {
+        // 群组视图：显示群组列表，隐藏其他列表
+        const contactList = $('#contact-list');
+        const contactGroups = $('#contact-groups');
+        const recentContacts = $('#recent-contacts');
+        const groupList = $('#group-list');
+        
+        if (contactList) contactList.style.display = 'none';
+        if (contactGroups) contactGroups.style.display = 'none';
+        if (recentContacts) recentContacts.style.display = 'none';
+        if (groupList) {
+            groupList.style.display = 'block';
+            QQGroup.loadGroups();
+        }
+        
+        // 显示群组操作按钮
+        const header = $('#chat-header');
+        if (header) {
+            header.innerHTML = `
+                <span class="chat-partner">群组</span>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn btn-sm btn-primary" onclick="QQGroup.showCreateDialog()">➕ 创建群</button>
+                    <button class="btn btn-sm btn-secondary" onclick="QQGroup.showJoinDialog()">🔍 加入群</button>
+                </div>
+            `;
+        }
+        
+        // 清空聊天区域
+        const messagesContainer = $('#chat-messages');
+        if (messagesContainer) {
+            messagesContainer.innerHTML = '<div class="no-chat-selected"><div class="no-chat-icon">👪</div><p>选择一个群组开始聊天</p></div>';
+        }
+        $('#chat-input').disabled = true;
+        $('#btn-send').disabled = true;
+        
+        return;
+    }
+    
+    // 非群组视图：恢复联系人列表显示
+    const contactList = $('#contact-list');
+    const contactGroups = $('#contact-groups');
+    const recentContacts = $('#recent-contacts');
+    const groupList = $('#group-list');
+    
+    if (contactList) contactList.style.display = 'block';
+    if (contactGroups) contactGroups.style.display = 'block';
+    if (recentContacts) recentContacts.style.display = '';
+    if (groupList) groupList.style.display = 'none';
     
     // 切换视图
     $$('.content-view').forEach(v => v.classList.remove('active'));
@@ -43,6 +92,14 @@ function switchTab(tab) {
             Community.load();
             break;
     }
+    
+    // 如果切换到聊天但没有选中联系人，恢复默认头部
+    if (tab === 'chat' && !Chat.currentPartner) {
+        const header = $('#chat-header');
+        if (header) {
+            header.innerHTML = '<span class="chat-partner">选择一个联系人开始聊天</span>';
+        }
+    }
 }
 
 // === 搜索用户 ===
@@ -52,31 +109,9 @@ const onSearchInput = debounce(async function (keyword) {
         return;
     }
     
-    const result = await API.searchUsers(keyword);
-    if (result.status === 'ok' && result.data) {
-        const container = $('#contact-list');
-        container.innerHTML = '';
-        
-        (result.data.users || []).forEach(user => {
-            const item = document.createElement('div');
-            item.className = 'contact-item';
-            item.innerHTML = `
-                <div class="contact-avatar">
-                    <img src="${user.avatar_url || 'assets/images/default_avatar.png'}" alt="头像">
-                </div>
-                <div class="contact-info">
-                    <div class="contact-name">${escapeHtml(user.nickname || user.username)}</div>
-                    <div class="contact-preview">点击添加好友</div>
-                </div>
-            `;
-            item.onclick = () => {
-                IPC.send(IPC.MessageType.SYSTEM_NOTIFY, {
-                    message: `添加好友功能开发中 - Phase 4`,
-                    type: 'info'
-                });
-            };
-            container.appendChild(item);
-        });
+    // 使用 Contacts.search 方法（已在 contacts.js 中实现）
+    if (window.Contacts && typeof Contacts.search === 'function') {
+        Contacts.search(keyword);
     }
 }, 500);
 
@@ -91,7 +126,71 @@ function onChatKeydown(event) {
 
 // === 添加好友 ===
 function showAddFriend() {
-    showNotification('添加好友功能开发中 - Phase 4', 'info');
+    // 弹出添加好友对话框
+    const overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    overlay.innerHTML = `
+        <div class="dialog-box dialog-small">
+            <div class="dialog-header">
+                <h3>👤 添加好友</h3>
+                <button class="dialog-close" onclick="this.closest('.dialog-overlay').remove()">&times;</button>
+            </div>
+            <div class="dialog-body">
+                <div class="form-group">
+                    <label>对方用户ID 或 用户名</label>
+                    <input type="text" id="add-friend-input" placeholder="输入用户ID 搜索">
+                </div>
+                <div class="form-group">
+                    <label>验证消息</label>
+                    <input type="text" id="add-friend-message" placeholder="你好，加个好友吧！">
+                </div>
+                <div id="add-friend-preview" style="margin-top:8px;display:none;"></div>
+            </div>
+            <div class="dialog-footer">
+                <button class="btn btn-secondary" onclick="this.closest('.dialog-overlay').remove()">取消</button>
+                <button class="btn btn-primary" onclick="doAddFriend()">发送申请</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+    
+    // 搜索预览
+    const input = $('#add-friend-input');
+    if (input) {
+        input.oninput = debounce(async function () {
+            const keyword = this.value.trim();
+            const preview = $('#add-friend-preview');
+            if (!keyword) { preview.style.display = 'none'; return; }
+            const result = await API.searchUsers(keyword);
+            if (result.status === 'ok' && result.data && result.data.users && result.data.users.length > 0) {
+                const user = result.data.users[0];
+                preview.innerHTML = `
+                    <div class="search-result-item">
+                        <img src="${escapeHtml(user.avatar_url || 'assets/images/default_avatar.png')}"
+                             style="width:32px;height:32px;border-radius:50%;">
+                        <span>${escapeHtml(user.nickname || user.username)}</span>
+                    </div>
+                `;
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+        }, 300);
+    }
+}
+
+// === 执行添加好友 ===
+function doAddFriend() {
+    const userId = $('#add-friend-input').value.trim();
+    const message = $('#add-friend-message').value.trim() || '你好，加个好友吧！';
+    if (!userId) {
+        showNotification('请输入用户ID', 'error');
+        return;
+    }
+    if (window.QQFriends && typeof QQFriends.applyFriend === 'function') {
+        QQFriends.applyFriend(userId, message);
+        document.querySelector('.dialog-overlay')?.remove();
+    }
 }
 
 // === 上传模板 ===
@@ -106,6 +205,11 @@ function showSettings() {
     // 填充当前用户信息
     if (Auth.currentUser) {
         $('#settings-nickname').value = Auth.currentUser.nickname || '';
+    }
+    
+    // 加载 AI 配置到表单
+    if (window.AIChat && typeof loadAIConfigToForm === 'function') {
+        setTimeout(loadAIConfigToForm, 100);
     }
 }
 
@@ -157,6 +261,74 @@ function openExternalUrl(key) {
     showNotification(`正在打开: ${url}`, 'info');
 }
 
+// === AI 配置管理 ===
+function saveAIConfig() {
+    if (!window.AIChat) return;
+    
+    AIChat.config.provider = document.getElementById('ai-provider')?.value || 'openai';
+    AIChat.config.apiEndpoint = document.getElementById('ai-endpoint')?.value || '';
+    AIChat.config.apiKey = document.getElementById('ai-key')?.value || '';
+    AIChat.config.model = document.getElementById('ai-model')?.value || 'gpt-3.5-turbo';
+    AIChat.config.maxTokens = parseInt(document.getElementById('ai-max-tokens')?.value || '2048', 10);
+    AIChat.config.temperature = parseFloat(document.getElementById('ai-temperature')?.value || '0.7');
+    AIChat.config.systemPrompt = document.getElementById('ai-system-prompt')?.value || '你是一个有用的 AI 助手。';
+    
+    AIChat.saveConfig();
+    showNotification('AI 配置已保存', 'success');
+}
+
+function testAIConnection() {
+    if (!window.AIChat) return;
+    
+    // 先保存当前表单值到配置
+    AIChat.config.apiEndpoint = document.getElementById('ai-endpoint')?.value || '';
+    AIChat.config.apiKey = document.getElementById('ai-key')?.value || '';
+    
+    const statusEl = document.getElementById('ai-connection-status');
+    if (statusEl) {
+        statusEl.textContent = '⏳ 测试连接中...';
+        statusEl.style.color = '#666';
+    }
+    
+    AIChat.testConnection().then(result => {
+        if (statusEl) {
+            statusEl.textContent = result.success ? '✅ ' + result.message : '❌ ' + result.message;
+            statusEl.style.color = result.success ? '#22c55e' : '#ef4444';
+        }
+    });
+}
+
+function onAIProviderChange() {
+    const provider = document.getElementById('ai-provider')?.value;
+    const endpointInput = document.getElementById('ai-endpoint');
+    if (endpointInput && provider === 'openai') {
+        endpointInput.placeholder = 'https://api.openai.com';
+    } else if (endpointInput) {
+        endpointInput.placeholder = 'https://your-custom-api.com';
+    }
+}
+
+// === 加载 AI 配置到设置表单 ===
+function loadAIConfigToForm() {
+    if (!window.AIChat) return;
+    
+    const set = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = value;
+    };
+    
+    set('ai-provider', AIChat.config.provider);
+    set('ai-endpoint', AIChat.config.apiEndpoint);
+    set('ai-key', AIChat.config.apiKey);
+    set('ai-model', AIChat.config.model);
+    set('ai-max-tokens', AIChat.config.maxTokens);
+    set('ai-temperature', AIChat.config.temperature);
+    set('ai-system-prompt', AIChat.config.systemPrompt);
+    
+    const tempVal = document.getElementById('ai-temp-value');
+    if (tempVal) tempVal.textContent = AIChat.config.temperature;
+}
+
 // === 应用初始化 ===
 document.addEventListener('DOMContentLoaded', async function () {
     console.log('Chrono-shift 客户端 v0.1.0 — 墨竹');
@@ -174,6 +346,25 @@ document.addEventListener('DOMContentLoaded', async function () {
         
         // 加载数据
         Contacts.load();
+        
+        // 初始化 QQ 社交功能
+        if (window.QQFriends && typeof QQFriends.init === 'function') {
+            QQFriends.init();
+        }
+        if (window.QQStatus && typeof QQStatus.init === 'function') {
+            QQStatus.init();
+        }
+        if (window.QQGroup && typeof QQGroup.init === 'function') {
+            QQGroup.init();
+        }
+        
+        // 初始化 AI 模块
+        if (window.AIChat && typeof AIChat.init === 'function') {
+            AIChat.init();
+        }
+        if (window.AISmartReply && typeof AISmartReply.init === 'function') {
+            AISmartReply.init();
+        }
     } else {
         // 未登录，显示登录页
         showPage('page-auth');

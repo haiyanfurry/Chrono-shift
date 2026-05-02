@@ -1,0 +1,650 @@
+/**
+ * Chrono-shift QQ 风格群组 & 好友管理样式
+ */
+
+/* === 联系人分组列表 === */
+#contact-groups {
+    padding: var(--spacing-sm) 0;
+    border-bottom: 1px solid var(--color-border-light);
+    margin-bottom: var(--spacing-xs);
+}
+
+.contact-group-item {
+    display: flex;
+    align-items: center;
+    padding: 8px var(--spacing-lg);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    gap: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    position: relative;
+}
+
+.contact-group-item:hover {
+    background: var(--sidebar-item-hover);
+}
+
+.contact-group-item.active {
+    background: var(--sidebar-item-active);
+    color: var(--color-primary);
+    font-weight: 500;
+}
+
+.contact-group-item .group-icon {
+    font-size: 16px;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.contact-group-item .group-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.contact-group-item .group-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contact-group-item .group-count {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    background: var(--color-bg-tertiary);
+    border-radius: 10px;
+    padding: 0 6px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.contact-group-item .group-badge {
+    background: var(--color-error);
+    color: white;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.contact-group-item.has-badge {
+    color: var(--color-error);
+}
+
+.group-add-btn {
+    opacity: 0.6;
+    font-size: var(--font-size-xs);
+}
+
+.group-add-btn:hover {
+    opacity: 1;
+}
+
+/* === QQ 风格联系人项 === */
+.qq-contact-item {
+    display: flex;
+    align-items: center;
+    padding: 10px var(--spacing-lg);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    gap: var(--spacing-md);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.qq-contact-item:hover {
+    background: var(--sidebar-item-hover);
+}
+
+.contact-avatar-wrap {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+}
+
+.contact-avatar-wrap img {
+    width: 100%;
+    height: 100%;
+    border-radius: var(--border-radius-full);
+    object-fit: cover;
+    border: 1px solid var(--color-border-light);
+}
+
+.contact-status-dot {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--color-bg-primary);
+}
+
+.contact-status-dot.online {
+    background: var(--avatar-online-dot);
+}
+
+.contact-status-dot.offline {
+    background: var(--avatar-offline-dot);
+}
+
+.qq-contact-item .contact-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.qq-contact-item .contact-name-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.qq-contact-item .contact-name {
+    font-weight: 500;
+    font-size: var(--font-size-base);
+    color: var(--color-text-primary);
+}
+
+.contact-note-badge {
+    font-size: 10px;
+    background: var(--color-primary-light);
+    color: var(--color-primary);
+    padding: 0 4px;
+    border-radius: 3px;
+}
+
+.qq-contact-item .contact-preview {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qq-contact-item .contact-time {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    flex-shrink: 0;
+}
+
+/* === 最近联系人 === */
+#recent-contacts {
+    padding: var(--spacing-sm) var(--spacing-lg);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.recent-title {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-bottom: var(--spacing-xs);
+    font-weight: 500;
+}
+
+.recent-contact-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 4px 0;
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+}
+
+.recent-contact-item:hover {
+    color: var(--color-primary);
+}
+
+.recent-contact-item img {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* === 群组列表 === */
+#group-list {
+    padding: var(--spacing-sm) 0;
+}
+
+.group-item {
+    display: flex;
+    align-items: center;
+    padding: 10px var(--spacing-lg);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+    gap: var(--spacing-md);
+}
+
+.group-item:hover {
+    background: var(--sidebar-item-hover);
+}
+
+.group-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--border-radius-md);
+    background: var(--gradient-primary);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+.group-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.group-name {
+    font-weight: 500;
+    font-size: var(--font-size-base);
+    color: var(--color-text-primary);
+}
+
+.group-meta {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+}
+
+/* === 群详情弹窗 === */
+.group-detail-section {
+    margin-bottom: var(--spacing-lg);
+}
+
+.group-detail-section h4 {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    margin-bottom: var(--spacing-md);
+    color: var(--color-text-primary);
+}
+
+.group-members-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.group-member-item {
+    display: flex;
+    align-items: center;
+    padding: 6px 0;
+    gap: var(--spacing-sm);
+}
+
+.group-member-item img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.member-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.member-name {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-primary);
+}
+
+.member-role {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+}
+
+.member-role.owner {
+    background: #FFF3CD;
+    color: #856404;
+}
+
+.member-role.admin {
+    background: #E5F6FD;
+    color: var(--color-primary);
+}
+
+/* === 群消息发送者 === */
+.msg-sender-name {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-bottom: 2px;
+}
+
+/* === 弹窗样式 === */
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    animation: fadeIn 0.15s ease;
+}
+
+.dialog-box {
+    background: var(--color-bg-primary);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-xl);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    animation: scaleIn 0.2s ease;
+}
+
+.dialog-small { width: 360px; }
+.dialog-medium { width: 480px; }
+.dialog-large { width: 600px; }
+
+.dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-lg) var(--spacing-xl);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.dialog-header h3 {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    margin: 0;
+}
+
+.dialog-close {
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: var(--color-text-tertiary);
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.dialog-close:hover {
+    color: var(--color-text-primary);
+}
+
+.dialog-body {
+    padding: var(--spacing-xl);
+    overflow-y: auto;
+    flex: 1;
+}
+
+.dialog-body .form-group {
+    margin-bottom: var(--spacing-md);
+}
+
+.dialog-body .form-group label {
+    display: block;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-xs);
+}
+
+.dialog-body .form-group input,
+.dialog-body .form-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    font-size: var(--font-size-base);
+    background: var(--color-bg-primary);
+}
+
+.dialog-body .form-group input:focus {
+    border-color: var(--color-border-focus);
+    outline: none;
+}
+
+.dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-md) var(--spacing-xl);
+    border-top: 1px solid var(--color-border);
+}
+
+/* === 右键菜单 === */
+.context-menu {
+    position: fixed;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-md);
+    box-shadow: var(--shadow-lg);
+    min-width: 160px;
+    z-index: 2000;
+    padding: 4px 0;
+    animation: scaleIn 0.1s ease;
+}
+
+.context-menu-header {
+    padding: 8px 16px;
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    border-bottom: 1px solid var(--color-border-light);
+    font-weight: 500;
+}
+
+.context-menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-primary);
+    transition: background var(--transition-fast);
+}
+
+.context-menu-item:hover {
+    background: var(--sidebar-item-hover);
+}
+
+.context-menu-item.danger {
+    color: var(--color-error);
+}
+
+.context-menu-item.danger:hover {
+    background: var(--color-error-bg);
+}
+
+.context-menu-divider {
+    height: 1px;
+    background: var(--color-border-light);
+    margin: 4px 0;
+}
+
+/* === 好友请求项 === */
+.friend-request-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 0;
+    gap: var(--spacing-md);
+    border-bottom: 1px solid var(--color-border-light);
+}
+
+.friend-request-item img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.request-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.request-name {
+    font-weight: 500;
+    font-size: var(--font-size-base);
+}
+
+.request-message {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+    margin-top: 2px;
+}
+
+.request-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+    flex-shrink: 0;
+}
+
+/* === 搜索预览 === */
+.search-result-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 8px;
+    background: var(--color-bg-secondary);
+    border-radius: var(--border-radius-md);
+}
+
+/* === 动画 === */
+@keyframes scaleIn {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+/* === 消息内容包装（群消息显示发送者） === */
+.message-content {
+    display: flex;
+    flex-direction: column;
+    max-width: 100%;
+}
+
+/* === 文件消息 === */
+.file-message {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: 8px 12px;
+    background: var(--color-bg-secondary);
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+}
+
+.file-message .file-icon {
+    font-size: 24px;
+}
+
+.file-message .file-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-message .file-name {
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+}
+
+.file-message .file-size {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-tertiary);
+}
+
+/* === 表情面板 === */
+.emoji-panel {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-lg);
+    z-index: 100;
+    display: none;
+}
+
+.emoji-panel.active {
+    display: block;
+}
+
+.emoji-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.emoji-tab {
+    flex: 1;
+    padding: 8px;
+    text-align: center;
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    border-bottom: 2px solid transparent;
+}
+
+.emoji-tab.active {
+    border-bottom-color: var(--color-primary);
+    color: var(--color-primary);
+}
+
+.emoji-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 4px;
+    padding: var(--spacing-sm);
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.emoji-item {
+    font-size: 24px;
+    text-align: center;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--border-radius-sm);
+}
+
+.emoji-item:hover {
+    background: var(--color-bg-hover);
+}
+
+/* === 状态选择器 === */
+.status-selector {
+    display: flex;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) 0;
+}
+
+.status-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: var(--spacing-sm);
+    border-radius: var(--border-radius-md);
+    transition: background var(--transition-fast);
+}
+
+.status-option:hover {
+    background: var(--color-bg-hover);
+}
+
+.status-option.active {
+    background: var(--color-primary-light);
+}
+
+.status-option .status-icon {
+    font-size: 28px;
+}
+
+.status-option .status-label {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+}

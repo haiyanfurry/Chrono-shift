@@ -35,6 +35,11 @@ int LocalStorage::init(const std::string& app_data_path)
     config_path_ = app_data_path + "/config";
     cache_path_  = app_data_path + "/cache";
     themes_path_ = app_data_path + "/themes";
+    plugins_path_     = app_data_path + "/plugins";
+    ext_path_         = app_data_path + "/extensions";
+    ai_path_          = app_data_path + "/ai";
+    devtools_path_    = app_data_path + "/devtools";
+    user_custom_path_ = app_data_path + "/user_custom";
 
     /* 创建必要目录 */
     if (ensure_dir(config_path_) != 0) {
@@ -48,6 +53,21 @@ int LocalStorage::init(const std::string& app_data_path)
     if (ensure_dir(themes_path_) != 0) {
         LOG_ERROR("无法创建主题目录: %s", themes_path_.c_str());
         return -1;
+    }
+    if (ensure_dir(plugins_path_) != 0) {
+        LOG_WARN("无法创建插件目录: %s", plugins_path_.c_str());
+    }
+    if (ensure_dir(ext_path_) != 0) {
+        LOG_WARN("无法创建扩展目录: %s", ext_path_.c_str());
+    }
+    if (ensure_dir(ai_path_) != 0) {
+        LOG_WARN("无法创建AI目录: %s", ai_path_.c_str());
+    }
+    if (ensure_dir(devtools_path_) != 0) {
+        LOG_WARN("无法创建开发者工具目录: %s", devtools_path_.c_str());
+    }
+    if (ensure_dir(user_custom_path_) != 0) {
+        LOG_WARN("无法创建用户自定义目录: %s", user_custom_path_.c_str());
     }
 
     initialized_ = true;
@@ -78,31 +98,89 @@ std::string LocalStorage::full_path(const std::string& relative_path) const
 int LocalStorage::save_config(const std::string& key, const std::string& value)
 {
     if (!initialized_) return -1;
-    (void)key;
-    (void)value;
-    /* TODO: Phase 3 实现 */
-    LOG_DEBUG("保存配置: %s=%s", key.c_str(), value.c_str());
+
+    std::string file_path = config_path_ + "/" + key + ".json";
+    FILE* fp = nullptr;
+#ifdef _WIN32
+    fopen_s(&fp, file_path.c_str(), "w");
+#else
+    fp = fopen(file_path.c_str(), "w");
+#endif
+    if (!fp) {
+        LOG_ERROR("无法打开配置文件: %s", file_path.c_str());
+        return -1;
+    }
+
+    fwrite(value.data(), 1, value.size(), fp);
+    fclose(fp);
+
+    LOG_DEBUG("保存配置: %s=%s (%zu bytes)",
+              key.c_str(), value.c_str(), value.size());
     return 0;
 }
 
 int LocalStorage::load_config(const std::string& key, std::string& value)
 {
     if (!initialized_) return -1;
-    (void)key;
-    (void)value;
-    /* TODO: Phase 3 实现 */
-    LOG_DEBUG("加载配置: %s", key.c_str());
-    return -1;
+
+    std::string file_path = config_path_ + "/" + key + ".json";
+    FILE* fp = nullptr;
+#ifdef _WIN32
+    fopen_s(&fp, file_path.c_str(), "rb");
+#else
+    fp = fopen(file_path.c_str(), "rb");
+#endif
+    if (!fp) {
+        LOG_DEBUG("配置文件不存在: %s", file_path.c_str());
+        return -1;
+    }
+
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    if (file_size <= 0) {
+        fclose(fp);
+        return -1;
+    }
+
+    rewind(fp);
+    value.resize(static_cast<size_t>(file_size));
+    size_t bytes_read = fread(&value[0], 1, static_cast<size_t>(file_size), fp);
+    fclose(fp);
+
+    if (bytes_read != static_cast<size_t>(file_size)) {
+        LOG_ERROR("读取配置不完整: %s", file_path.c_str());
+        return -1;
+    }
+
+    LOG_DEBUG("加载配置: %s (%zu bytes)", key.c_str(), value.size());
+    return 0;
 }
 
 int LocalStorage::save_file(const std::string& relative_path,
                             const uint8_t* data, size_t length)
 {
     if (!initialized_ || !data) return -1;
-    (void)relative_path;
-    (void)data;
-    (void)length;
-    /* TODO: Phase 5 实现 */
+
+    std::string file_path = full_path(relative_path);
+    FILE* fp = nullptr;
+#ifdef _WIN32
+    fopen_s(&fp, file_path.c_str(), "wb");
+#else
+    fp = fopen(file_path.c_str(), "wb");
+#endif
+    if (!fp) {
+        LOG_ERROR("无法打开文件: %s", file_path.c_str());
+        return -1;
+    }
+
+    size_t written = fwrite(data, 1, length, fp);
+    fclose(fp);
+
+    if (written != length) {
+        LOG_ERROR("写入文件不完整: %s", file_path.c_str());
+        return -1;
+    }
+
     LOG_DEBUG("保存文件: %s (%zu bytes)", relative_path.c_str(), length);
     return 0;
 }
@@ -111,11 +189,38 @@ int LocalStorage::load_file(const std::string& relative_path,
                             std::vector<uint8_t>& data)
 {
     if (!initialized_) return -1;
-    (void)relative_path;
-    (void)data;
-    /* TODO: Phase 5 实现 */
-    LOG_DEBUG("加载文件: %s", relative_path.c_str());
-    return -1;
+
+    std::string file_path = full_path(relative_path);
+    FILE* fp = nullptr;
+#ifdef _WIN32
+    fopen_s(&fp, file_path.c_str(), "rb");
+#else
+    fp = fopen(file_path.c_str(), "rb");
+#endif
+    if (!fp) {
+        LOG_DEBUG("文件不存在: %s", file_path.c_str());
+        return -1;
+    }
+
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    if (file_size <= 0) {
+        fclose(fp);
+        return -1;
+    }
+
+    rewind(fp);
+    data.resize(static_cast<size_t>(file_size));
+    size_t bytes_read = fread(data.data(), 1, static_cast<size_t>(file_size), fp);
+    fclose(fp);
+
+    if (bytes_read != static_cast<size_t>(file_size)) {
+        LOG_ERROR("读取文件不完整: %s", file_path.c_str());
+        return -1;
+    }
+
+    LOG_DEBUG("加载文件: %s (%zu bytes)", relative_path.c_str(), data.size());
+    return 0;
 }
 
 int LocalStorage::delete_file(const std::string& relative_path)

@@ -18,15 +18,18 @@ Auth.login = async function (username, password) {
         Auth.currentUser = result.data;
         API.TOKEN = result.data.token;
         
-        // 保存会话
+        // 通过 IPC 保存会话到 C++ 后端（内存安全存储，不暴露给 XSS）
         IPC.send(IPC.MessageType.LOGIN, {
             user_id: result.data.id,
             token: result.data.token
         });
         
-        // 保存令牌到本地存储
-        localStorage.setItem('chrono_token', result.data.token);
-        localStorage.setItem('chrono_user', JSON.stringify(result.data));
+        // 仅缓存非敏感用户信息供会话恢复（无 token）
+        sessionStorage.setItem('chrono_user', JSON.stringify({
+            id: result.data.id,
+            username: result.data.username,
+            nickname: result.data.nickname
+        }));
         
         return true;
     }
@@ -45,15 +48,18 @@ Auth.register = async function (username, password, nickname) {
         Auth.currentUser = result.data;
         API.TOKEN = result.data.token;
         
-        // 保存会话
+        // 通过 IPC 保存会话到 C++ 后端
         IPC.send(IPC.MessageType.LOGIN, {
             user_id: result.data.id,
             token: result.data.token
         });
         
-        // 保存令牌到本地存储
-        localStorage.setItem('chrono_token', result.data.token);
-        localStorage.setItem('chrono_user', JSON.stringify(result.data));
+        // 仅缓存非敏感用户信息
+        sessionStorage.setItem('chrono_user', JSON.stringify({
+            id: result.data.id,
+            username: result.data.username,
+            nickname: result.data.nickname
+        }));
         
         showNotification('注册成功', 'success');
         return true;
@@ -69,8 +75,8 @@ Auth.logout = function () {
     Auth.currentUser = null;
     API.TOKEN = null;
     
-    localStorage.removeItem('chrono_token');
-    localStorage.removeItem('chrono_user');
+    sessionStorage.removeItem('chrono_user');
+    sessionStorage.removeItem('chrono_token');
     
     IPC.send(IPC.MessageType.LOGOUT, {});
     
@@ -80,14 +86,20 @@ Auth.logout = function () {
 
 // === 恢复会话 ===
 Auth.restoreSession = function () {
-    const token = localStorage.getItem('chrono_token');
-    const userData = localStorage.getItem('chrono_user');
+    // Token 只在内存中，不再持久化存储
+    // 需要重新登录或通过 IPC 从 C++ 后端恢复
+    const userData = sessionStorage.getItem('chrono_user');
     
-    if (token && userData) {
-        API.TOKEN = token;
-        Auth.currentUser = JSON.parse(userData);
-        Auth.isLoggedIn = true;
-        return true;
+    if (userData) {
+        try {
+            Auth.currentUser = JSON.parse(userData);
+            Auth.isLoggedIn = true;
+            // Token 需要重新获取（通过 IPC 或重新登录）
+            API.TOKEN = null;
+            return true;
+        } catch (e) {
+            sessionStorage.removeItem('chrono_user');
+        }
     }
     
     return false;

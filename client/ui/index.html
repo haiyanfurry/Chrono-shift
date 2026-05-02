@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: https:; connect-src 'self' ws: wss: http: https:;">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https: ws://127.0.0.1:4443 wss://127.0.0.1:4443 http://127.0.0.1:9010;">
     <title>Chrono-shift — QQ 风格社交平台</title>
     
     <!-- 全局样式 -->
@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/chat.css">
     <link rel="stylesheet" href="css/community.css">
+    <link rel="stylesheet" href="css/qq_group.css">
+    <link rel="stylesheet" href="css/ai.css">
     
     <!-- 默认纯白主题 -->
     <link rel="stylesheet" href="css/themes/default.css" id="theme-stylesheet">
@@ -27,6 +29,14 @@
     <script src="js/chat.js" defer></script>
     <script src="js/contacts.js" defer></script>
     <script src="js/community.js" defer></script>
+    <script src="js/chat.js" defer></script>
+    <script src="js/qq_friends.js" defer></script>
+    <script src="js/qq_group.js" defer></script>
+    <script src="js/qq_file.js" defer></script>
+    <script src="js/qq_status.js" defer></script>
+    <script src="js/qq_emoji.js" defer></script>
+    <script src="js/ai_chat.js" defer></script>
+    <script src="js/ai_smart_reply.js" defer></script>
     <script src="js/app.js" defer></script>
 </head>
 <body>
@@ -131,9 +141,24 @@
                     <input type="text" id="search-input" placeholder="搜索用户..." oninput="onSearchInput(this.value)">
                 </div>
                 
-                <!-- 联系人列表 -->
+                <!-- 好友分组导航 -->
+                <div id="contact-groups">
+                    <!-- 动态由 QQFriends 生成 -->
+                </div>
+                
+                <!-- 最近联系人 -->
+                <div id="recent-contacts" style="display:none;">
+                    <!-- 动态由 QQFriends 生成 -->
+                </div>
+                
+                <!-- 联系人/群组列表 -->
                 <div class="contact-list" id="contact-list">
                     <!-- 动态由 JS 生成 -->
+                </div>
+                
+                <!-- 群组列表 -->
+                <div id="group-list" style="display:none;">
+                    <!-- 动态由 QQGroup 生成 -->
                 </div>
 
                 <!-- 外部网站跳转入口 -->
@@ -171,6 +196,10 @@
                     <button class="btn-nav" onclick="switchTab('community')" id="tab-community">
                         <span class="nav-icon">🎨</span>
                         <span class="nav-label">社区</span>
+                    </button>
+                    <button class="btn-nav" onclick="switchTab('groups')" id="tab-groups">
+                        <span class="nav-icon">👪</span>
+                        <span class="nav-label">群组</span>
                     </button>
                 </div>
             </div>
@@ -237,6 +266,46 @@
                             <h3>🎨 主题</h3>
                             <p>当前主题: <span id="current-theme-name">纯白默认</span></p>
                             <button class="btn btn-secondary" onclick="resetTheme()">恢复默认主题</button>
+                        </div>
+                        <div class="settings-section">
+                            <h3>🤖 AI 配置</h3>
+                            <div class="form-group">
+                                <label>AI 提供商</label>
+                                <select id="ai-provider" onchange="onAIProviderChange()">
+                                    <option value="openai">OpenAI 兼容</option>
+                                    <option value="custom">自定义 API</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>API 端点</label>
+                                <input type="text" id="ai-endpoint" placeholder="https://api.openai.com">
+                            </div>
+                            <div class="form-group">
+                                <label>API Key</label>
+                                <input type="password" id="ai-key" placeholder="sk-...">
+                            </div>
+                            <div class="form-group">
+                                <label>模型名称</label>
+                                <input type="text" id="ai-model" placeholder="gpt-3.5-turbo">
+                            </div>
+                            <div class="form-group">
+                                <label>温度 (Temperature): <span id="ai-temp-value">0.7</span></label>
+                                <input type="range" id="ai-temperature" min="0" max="2" step="0.1" value="0.7"
+                                       oninput="document.getElementById('ai-temp-value').textContent=this.value">
+                            </div>
+                            <div class="form-group">
+                                <label>最大 Token</label>
+                                <input type="number" id="ai-max-tokens" value="2048" min="1" max="8192">
+                            </div>
+                            <div class="form-group">
+                                <label>系统提示词</label>
+                                <textarea id="ai-system-prompt" rows="2" placeholder="你是一个有用的 AI 助手。"></textarea>
+                            </div>
+                            <div style="display:flex;gap:8px;margin-top:8px;">
+                                <button class="btn btn-primary" onclick="saveAIConfig()">保存配置</button>
+                                <button class="btn btn-secondary" onclick="testAIConnection()">测试连接</button>
+                            </div>
+                            <p id="ai-connection-status" style="margin-top:8px;font-size:12px;"></p>
                         </div>
                         <div class="settings-section">
                             <h3>ℹ️ 关于</h3>

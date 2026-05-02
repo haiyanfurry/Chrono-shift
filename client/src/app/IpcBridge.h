@@ -22,6 +22,7 @@ namespace app {
  * IPC 消息类型 (与前端 ipc.js 的 IPC.MessageType 对应)
  */
 enum class IpcMessageType : uint8_t {
+    // === 系统消息 (0x01-0x6F) ===
     kLogin          = 0x01,  // 登录
     kLogout         = 0x02,  // 登出
     kSendMessage    = 0x10,  // 发送消息
@@ -33,6 +34,33 @@ enum class IpcMessageType : uint8_t {
     kOpenUrl        = 0x50,  // 打开外部 URL
     kConnected      = 0x60,  // 连接状态通知
     kDisconnected   = 0x61,  // 断开连接通知
+
+    // === 插件系统保留 (0x70-0x9F, 48 个) ===
+    kPluginBase     = 0x70,  // 插件消息起始
+    kPluginRegister = 0x71,  // 插件注册通知
+    kPluginEvent    = 0x72,  // 插件事件上报
+    kPluginLog      = 0x73,  // 插件日志
+    kPluginMax      = 0x9F,  // 插件消息上限
+
+    // === 扩展系统保留 (0xA0-0xEF, 80 个) ===
+    kExtensionBase      = 0xA0,  // 扩展消息起始
+    kExtensionInstall   = 0xA1,  // 安装扩展
+    kExtensionUninstall = 0xA2,  // 卸载扩展
+    kExtensionConfig    = 0xA3,  // 扩展配置变更
+    kExtensionEvent     = 0xA4,  // 扩展事件
+    kExtensionMax       = 0xEF,  // 扩展消息上限
+
+    // === AI 系统保留 (0xF0-0xFE, 15 个) ===
+    kAIBase         = 0xF0,  // AI 消息起始
+    kAIChat         = 0xF0,  // AI 聊天
+    kAISmartReply   = 0xF1,  // AI 智能回复
+    kAITranslate    = 0xF2,  // AI 翻译
+    kAISummarize    = 0xF3,  // AI 摘要
+    kAIImageGen     = 0xF4,  // AI 图片生成
+    kAITTS          = 0xF5,  // AI 文本转语音
+    kAIMax          = 0xFE,  // AI 消息上限
+
+    // === 系统通知 (0xFF) ===
     kSystemNotify   = 0xFF   // 系统通知
 };
 
@@ -53,7 +81,7 @@ using IpcCallback = std::function<void(IpcMessageType type, const std::string& j
 class IpcBridge {
 public:
     /** 最大注册处理器数量 */
-    static constexpr size_t kMaxHandlers = 32;
+    static constexpr size_t kMaxHandlers = 128;
 
     IpcBridge() = default;
     ~IpcBridge() = default;
@@ -110,9 +138,17 @@ public:
      */
     static IpcMessageType value_to_type(uint8_t value);
 
+    /**
+     * 检查消息类型是否在指定范围内
+     */
+    static bool is_plugin_type(uint8_t value)  { return value >= 0x70 && value <= 0x9F; }
+    static bool is_extension_type(uint8_t value) { return value >= 0xA0 && value <= 0xEF; }
+    static bool is_ai_type(uint8_t value)      { return value >= 0xF0 && value <= 0xFE; }
+    static bool is_system_type(uint8_t value)  { return value <= 0x6F || value == 0xFF; }
+
 private:
-    /** 注册的处理器列表 */
-    std::vector<std::pair<IpcMessageType, IpcCallback>> handlers_;
+    /** 注册的处理器映射 (type -> handler) */
+    std::unordered_map<IpcMessageType, IpcCallback> handlers_;
 
     /** 默认处理器 */
     IpcCallback default_callback_;

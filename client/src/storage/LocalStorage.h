@@ -35,10 +35,15 @@ public:
     int init(const std::string& app_data_path);
 
     /** 获取各路径 */
-    const std::string& base_path()   const { return base_path_; }
-    const std::string& config_path()  const { return config_path_; }
-    const std::string& cache_path()   const { return cache_path_; }
-    const std::string& themes_path()  const { return themes_path_; }
+    const std::string& base_path()       const { return base_path_; }
+    const std::string& config_path()      const { return config_path_; }
+    const std::string& cache_path()       const { return cache_path_; }
+    const std::string& themes_path()      const { return themes_path_; }
+    const std::string& plugins_path()     const { return plugins_path_; }
+    const std::string& ext_path()         const { return ext_path_; }
+    const std::string& ai_path()          const { return ai_path_; }
+    const std::string& devtools_path()    const { return devtools_path_; }
+    const std::string& user_custom_path() const { return user_custom_path_; }
 
     // ---- 配置管理 ----
 
@@ -110,6 +115,11 @@ private:
     std::string config_path_;
     std::string cache_path_;
     std::string themes_path_;
+    std::string plugins_path_;      // ./data/plugins/
+    std::string ext_path_;          // ./data/extensions/
+    std::string ai_path_;           // ./data/ai/
+    std::string devtools_path_;     // ./data/devtools/
+    std::string user_custom_path_;  // ./data/user_custom/
     bool initialized_ = false;
 };
 

@@ -106,7 +106,7 @@
         Auth.currentUser = data;
         API.TOKEN = data.token;
 
-        // IPC 通知 C++ 后端保存会话
+        // IPC 通知 C++ 后端保存会话（安全存储 token）
         if (typeof IPC !== 'undefined') {
             IPC.send(IPC.MessageType.LOGIN, {
                 user_id: data.user_id,
@@ -114,8 +114,14 @@
             });
         }
 
-        localStorage.setItem('chrono_token', data.token);
-        localStorage.setItem('chrono_user', JSON.stringify(data));
+        // 仅保存非敏感用户信息到 sessionStorage（不持久化 token）
+        var safeUser = {
+            user_id: data.user_id,
+            username: data.username || '',
+            nickname: data.nickname || '',
+            avatar_url: data.avatar_url || ''
+        };
+        sessionStorage.setItem('chrono_user', JSON.stringify(safeUser));
     };
 
     // ==================== 邮箱验证码 ====================

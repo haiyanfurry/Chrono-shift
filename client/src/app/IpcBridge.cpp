@@ -34,7 +34,7 @@ void IpcBridge::register_handler(IpcMessageType type, IpcCallback handler)
         return;
     }
 
-    handlers_.emplace_back(type, std::move(handler));
+    handlers_[type] = std::move(handler);
     LOG_DEBUG("IPC 处理器已注册: type=0x%02X",
               static_cast<uint8_t>(type));
 }
@@ -66,19 +66,31 @@ int IpcBridge::handle_from_js(const std::string& json_str)
 
     LOG_DEBUG("收到 JS 消息: %s", json_str.c_str());
 
-    /* 查找注册的处理器 */
-    for (const auto& [type, handler] : handlers_) {
-        if (handler) {
-            handler(type, json_str);
-            return 0;
+    /* 从 JSON 中解析 type 字段 */
+    IpcMessageType msg_type = IpcMessageType::kSystemNotify;
+    /* 简单 JSON 解析: 查找 "type":<number> 或 "type": <number> */
+    {
+        auto type_pos = json_str.find("\"type\"");
+        if (type_pos != std::string::npos) {
+            auto val_pos = json_str.find_first_of("0123456789", type_pos + 6);
+            if (val_pos != std::string::npos) {
+                uint8_t type_val = static_cast<uint8_t>(
+                    std::stoi(json_str.substr(val_pos)));
+                msg_type = value_to_type(type_val);
+            }
         }
+    }
+
+    /* 通过类型精确查找已注册的处理器 */
+    auto it = handlers_.find(msg_type);
+    if (it != handlers_.end() && it->second) {
+        it->second(msg_type, json_str);
+        return 0;
     }
 
     /* 默认处理器 */
     if (default_callback_) {
-        /* 尝试从 JSON 中解析 type 字段 */
-        // 简化处理：传递 kSystemNotify 作为默认类型
-        default_callback_(IpcMessageType::kSystemNotify, json_str);
+        default_callback_(msg_type, json_str);
     }
 
     return 0;

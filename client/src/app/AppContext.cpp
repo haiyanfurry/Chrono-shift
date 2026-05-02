@@ -31,6 +31,9 @@ AppContext::AppContext()
     , webview_(std::make_unique<WebViewManager>())
     , http_server_(std::make_unique<ClientHttpServer>())
     , updater_(std::make_unique<Updater>())
+    , plugin_mgr_(std::make_unique<plugin::PluginManager>())
+    , ai_provider_(nullptr) // 延迟创建，等待配置
+    , ai_session_(nullptr)
 {
 }
 
@@ -66,6 +69,31 @@ int AppContext::init(const ClientConfig& config)
 
     /* 5. 初始化 IPC 桥接 */
     ipc_->init();
+
+    /* 6. 初始化插件管理器 */
+    if (plugin_mgr_->init(config.app_data_path + "/plugins",
+                          ipc_.get(), http_server_.get()) != 0) {
+        LOG_WARN("插件管理器初始化失败");
+    }
+
+    /* 7. 尝试加载 AI 配置 */
+    {
+        std::string ai_config_json;
+        if (storage_->load_config("ai_config", ai_config_json) == 0 && !ai_config_json.empty()) {
+            auto ai_config = ai::AIConfig::from_json(ai_config_json);
+            if (ai_config.is_valid()) {
+                auto provider = ai::AIProvider::create(ai_config.provider_type, ai_config);
+                if (provider) {
+                    ai_provider_ = std::move(provider);
+                    ai_session_ = std::make_unique<ai::AIChatSession>(
+                        ai::AIProvider::create(ai_config.provider_type, ai_config));
+                    LOG_INFO("AI Provider 已加载: %s", ai_provider_->name().c_str());
+                }
+            }
+        } else {
+            LOG_DEBUG("未找到 AI 配置，跳过 AI 初始化");
+        }
+    }
 
     LOG_INFO("客户端初始化完成");
     return 0;
@@ -151,6 +179,8 @@ void AppContext::stop()
 
     LOG_INFO("客户端正在关闭...");
 
+    plugin_mgr_->stop_all();
+    plugin_mgr_->unload_all();
     network_->disconnect();
     http_server_->stop();
     webview_->destroy();

@@ -201,7 +201,21 @@ void ClientHttpServer::handle_client(SOCKET fd)
         return;
     }
 
-    /* 路由匹配 */
+    /* 提取 body (简单解析: 空行后为 body) */
+    std::string request_body;
+    const char* body_start = std::strstr(buf, "\r\n\r\n");
+    if (body_start) {
+        body_start += 4;
+        request_body = std::string(body_start, received - (body_start - buf));
+    }
+
+    /* 优先尝试动态路由分发 (扩展/插件/AI 路由) */
+    if (dispatch_dynamic_route(fd, path, method, request_body)) {
+        closesocket(fd);
+        return;
+    }
+
+    /* 静态路由匹配 */
     if (std::strcmp(method, "GET") == 0) {
         if (std::strcmp(path, "/health") == 0) {
             handle_health(fd);
@@ -241,6 +255,38 @@ void ClientHttpServer::send_response(SOCKET fd, int status_code,
     }
 }
 
+/* ============================================================
+ * JSON 字符串转义工具
+ * ============================================================ */
+
+static std::string escapeJson(const std::string& s)
+{
+    std::ostringstream out;
+    out << '"';
+    for (char c : s) {
+        switch (c) {
+            case '"':  out << "\\\""; break;
+            case '\\': out << "\\\\"; break;
+            case '\b': out << "\\b";  break;
+            case '\f': out << "\\f";  break;
+            case '\n': out << "\\n";  break;
+            case '\r': out << "\\r";  break;
+            case '\t': out << "\\t";  break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[8];
+                    snprintf(buf, sizeof(buf), "\\u%04x", c);
+                    out << buf;
+                } else {
+                    out << c;
+                }
+                break;
+        }
+    }
+    out << '"';
+    return out.str();
+}
+
 void ClientHttpServer::send_json_response(SOCKET fd, int status_code,
                                           const std::string& status_text,
                                           const std::string& json_body)
@@ -251,9 +297,9 @@ void ClientHttpServer::send_json_response(SOCKET fd, int status_code,
 void ClientHttpServer::send_error_json(SOCKET fd, int status_code,
                                        const std::string& message)
 {
-    std::ostringstream json;
-    json << "{\"status\":\"error\",\"message\":\"" << message << "\"}";
-    send_json_response(fd, status_code, "Error", json.str());
+    std::string body = "{\"status\":\"error\",\"message\":"
+                     + escapeJson(message) + "}";
+    send_json_response(fd, status_code, "Error", body);
 }
 
 /* ============================================================
@@ -278,6 +324,55 @@ void ClientHttpServer::handle_local_status(SOCKET fd)
 void ClientHttpServer::handle_not_found(SOCKET fd)
 {
     send_error_json(fd, 404, "Not Found");
+}
+
+/* ============================================================
+ * 动态路由 (扩展/插件/AI)
+ * ============================================================ */
+
+int ClientHttpServer::register_route(const std::string& path_prefix, HttpHandler handler)
+{
+    if (dynamic_routes_.size() >= kMaxDynamicRoutes) {
+        LOG_WARN("动态路由表已满 (%zu/%zu)", dynamic_routes_.size(), kMaxDynamicRoutes);
+        return -1;
+    }
+    if (dynamic_routes_.find(path_prefix) != dynamic_routes_.end()) {
+        LOG_WARN("路由前缀已存在: %s", path_prefix.c_str());
+        return -1;
+    }
+    dynamic_routes_[path_prefix] = std::move(handler);
+    LOG_INFO("注册动态路由: %s (总计 %zu)", path_prefix.c_str(), dynamic_routes_.size());
+    return 0;
+}
+
+void ClientHttpServer::unregister_route(const std::string& path_prefix)
+{
+    auto it = dynamic_routes_.find(path_prefix);
+    if (it != dynamic_routes_.end()) {
+        dynamic_routes_.erase(it);
+        LOG_INFO("注销动态路由: %s", path_prefix.c_str());
+    }
+}
+
+bool ClientHttpServer::is_reserved_route(const std::string& path) const
+{
+    return path.find(kPluginRoutePrefix)   == 0 ||
+           path.find(kExtensionRoutePrefix) == 0 ||
+           path.find(kAIRoutePrefix)        == 0 ||
+           path.find(kDevToolRoutePrefix)   == 0;
+}
+
+bool ClientHttpServer::dispatch_dynamic_route(SOCKET fd, const std::string& path,
+                                              const std::string& method,
+                                              const std::string& body)
+{
+    for (const auto& [prefix, handler] : dynamic_routes_) {
+        if (path.find(prefix) == 0) {
+            handler(fd, path, method, body);
+            return true;
+        }
+    }
+    return false;
 }
 
 } // namespace app
