@@ -246,7 +246,9 @@ asm_obfuscate:
     jz      .param_error             ; out == NULL → 失败
 
     ; ── 保存参数到被调用者保存的寄存器 ──
-    mov     r12, rcx                 ; r12 = data ptr
+    ; 注意: 不能使用 r12 — ksa_init 会覆盖 r12 (pass 计数器)
+    ;       rsi/rdi/r13/r14/r15 不受 ksa_init 影响
+    mov     rsi, rcx                 ; rsi = data ptr
     mov     r13, rdx                 ; r13 = data length
     mov     r14, r8                  ; r14 = key ptr (64 bytes)
     mov     r15, r9                  ; r15 = out ptr
@@ -269,7 +271,7 @@ asm_obfuscate:
     call    gen_keystream            ; al = keystream byte
 
     ; XOR 密钥流到输入字节
-    movzx   edx, byte [r12 + rcx]    ; dl = data[rcx]
+    movzx   edx, byte [rsi + rcx]    ; dl = data[rcx]  (rsi 不受 ksa_init 影响)
     xor     edx, eax                 ; dl ^= keystream
     mov     byte [r15 + rcx], dl     ; out[rcx] = result
 
