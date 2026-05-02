@@ -22,7 +22,6 @@
 
 #ifdef _WIN32
 #include <direct.h>   /* _mkdir */
-#define mkdir(path, mode) _mkdir(path)
 #else
 #include <sys/stat.h> /* mkdir */
 #endif
@@ -82,7 +81,7 @@ static int ensure_dir(const char* path)
         return 0; /* 已存在 */
     }
     /* 尝试创建 */
-    if (mkdir(path) == 0) {
+    if (CreateDirectoryA(path, NULL)) {
         return 0;
     }
     /* 如果失败但目录存在则也认为成功 */
