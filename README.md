@@ -81,12 +81,29 @@
 | [`client/src/storage/`](client/src/storage/) | C++ | 本地存储、会话管理 |
 | [`client/src/util/`](client/src/util/) | C++ | 工具函数、日志 |
 | [`client/security/`](client/security/) | Rust | AES-256-GCM、安全存储、会话管理 |
-| [`client/ui/`](client/ui/) | HTML/CSS/JS | 现代化 Web 用户界面 |
+| [`client/src/ai/`](client/src/ai/) | C++ | AI 多提供商集成层（OpenAI/DeepSeek/xAI/Ollama/Gemini） |
+| [`client/ui/js/ai_chat.js`](client/ui/js/ai_chat.js) | JS | AI 聊天前端（PROVIDERS 常量、Gemini API 调用、连接测试） |
+| [`client/ui/css/ai.css`](client/ui/css/ai.css) | CSS | AI 聊天面板样式 |
 | [`client/tools/`](client/tools/) | C | CLI 调试工具 + 压力测试工具 |
 
 ---
 
 ## 功能特性
+
+### AI 集成
+
+| 功能 | 说明 | 支持提供商 |
+|------|------|-----------|
+| **AI 聊天** | 在聊天面板中与 AI 对话 | ✅ OpenAI / DeepSeek / xAI / Ollama / Gemini / 自定义 |
+| **智能回复** | 根据收到的消息生成回复建议 | ✅ OpenAI / DeepSeek / xAI / Ollama / Gemini / 自定义 |
+| **连接测试** | 验证 API 配置是否有效 | ✅ 所有提供商 |
+| **预设自动填充** | 选择提供商后自动填入端点、模型等默认值 | ✅ 6 种预设 |
+| **无 Key 模式** | Ollama 本地运行无需 API Key | ✅ Ollama |
+
+**AI 配置文件：**
+- C++ 后端: [`client/src/ai/`](client/src/ai/) — 枚举定义、工厂方法、WinHTTP 实现
+- 前端: [`ai_chat.js`](client/ui/js/ai_chat.js) — 路由分发、Gemini 格式转换
+- 文档: [`docs/AI_INTEGRATION.md`](docs/AI_INTEGRATION.md) — 完整集成指南
 
 ### CLI 调试工具
 
@@ -198,9 +215,16 @@ Chrono-shift/
 │   │   │   ├── WebViewManager.cpp# WebView2/WebKitGTK
 │   │   │   ├── IpcBridge.cpp     # IPC 桥接
 │   │   │   └── ClientHttpServer.cpp # 客户端 HTTP 服务
-│   │   └── util/                 # 工具
-│   │       ├── Logger.cpp        # 日志
-│   │       └── Utils.cpp         # 通用工具
+│   │   ├── util/                 # 工具
+│   │   │   ├── Logger.cpp        # 日志
+│   │   │   └── Utils.cpp         # 通用工具
+│   │   └── ai/                   # AI 集成层（6 提供商）
+│   │       ├── AIConfig.h/cpp    # 配置枚举 + ProviderPreset 预设
+│   │       ├── AIProvider.h/cpp  # 抽象基类 + 工厂方法
+│   │       ├── OpenAIProvider.h/cpp  # OpenAI 兼容协议（OpenAI/DS/xAI/Ollama 共用）
+│   │       ├── GeminiProvider.h/cpp  # Google Gemini 专用实现
+│   │       ├── CustomProvider.h/cpp  # 自定义 API 实现
+│   │       └── AIChatSession.h/cpp   # AI 对话会话管理
 │   ├── tools/                    # CLI 工具
 │   │   ├── debug_cli.c           # CLI 调试接口
 │   │   ├── stress_test.c         # 压力测试框架
@@ -208,7 +232,9 @@ Chrono-shift/
 │   ├── ui/                       # 前端 UI
 │   │   ├── index.html            # 主页面
 │   │   ├── css/                  # 样式表 (7 个文件)
-│   │   ├── js/                   # JavaScript (10 个)
+│   │   ├── js/                   # JavaScript (12 个)
+│   │   │   ├── ai_chat.js        # AI 聊天模块（PROVIDERS + 路由）
+│   │   │   └── ai_smart_reply.js # AI 智能回复
 │   │   └── assets/               # 静态资源
 │   ├── security/                 # Rust 安全模块
 │   │   └── src/
@@ -227,7 +253,8 @@ Chrono-shift/
 │   ├── API.md                    # API 接口文档
 │   ├── PROTOCOL.md               # 通信协议文档
 │   ├── BUILD.md                  # 构建指南
-│   └── HTTPS_MIGRATION.md        # HTTPS 迁移指南
+│   ├── HTTPS_MIGRATION.md        # HTTPS 迁移指南
+│   └── AI_INTEGRATION.md         # AI 集成文档（6 提供商配置指南）
 ├── plans/                        # 设计规划
 ├── reports/                      # 测试报告
 ├── cleanup.bat                   # Windows 清理脚本

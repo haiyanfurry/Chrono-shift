@@ -2,7 +2,7 @@
  * Chrono-shift AI Provider 抽象基类
  * C++17
  *
- * 定义统一的 AI 服务接口，支持 OpenAI 兼容 API 和自定义 API
+ * 定义统一的 AI 服务接口，支持 6 种 AI 提供商
  */
 #ifndef CHRONO_CLIENT_AI_PROVIDER_H
 #define CHRONO_CLIENT_AI_PROVIDER_H
@@ -24,6 +24,16 @@ namespace ai {
 struct ChatMessage {
     std::string role;      // "system", "user", "assistant"
     std::string content;
+};
+
+/**
+ * 提供商信息查询结果
+ */
+struct ProviderInfo {
+    std::string display_name;       // 显示名称
+    std::string default_endpoint;   // 默认 API 端点
+    std::string default_model;      // 默认模型
+    bool        requires_api_key;   // 是否需要 API Key
 };
 
 /**
@@ -96,6 +106,13 @@ public:
     static std::unique_ptr<AIProvider> create(
         AIProviderType type,
         const AIConfig& config);
+
+    /**
+     * 获取提供商信息
+     * @param type 提供商类型
+     * @return ProviderInfo
+     */
+    static ProviderInfo get_provider_info(AIProviderType type);
 
 protected:
     /** API 端点 */

@@ -3,6 +3,7 @@
  * C++17
  *
  * 实现 OpenAI 兼容的 HTTP API 调用
+ * 支持: OpenAI, DeepSeek, xAI Grok, Ollama (本地)
  */
 #ifndef CHRONO_CLIENT_AI_OPENAI_PROVIDER_H
 #define CHRONO_CLIENT_AI_OPENAI_PROVIDER_H
@@ -16,7 +17,12 @@ namespace ai {
 /**
  * OpenAI 兼容 API Provider
  *
- * 支持 OpenAI、Azure OpenAI、以及任何兼容 OpenAI API 的服务
+ * 支持所有 OpenAI 兼容协议的服务:
+ * - OpenAI (api.openai.com)
+ * - DeepSeek (api.deepseek.com)
+ * - xAI Grok (api.x.ai)
+ * - Ollama (localhost:11434)
+ * - 以及任何兼容 OpenAI API 的自定义服务
  */
 class OpenAIProvider : public AIProvider {
 public:
@@ -38,9 +44,13 @@ public:
 
     bool test_connection() override;
 
-    AIProviderType type() const override { return AIProviderType::kOpenAI; }
+    /** 返回实际的提供商类型 (动态: kOpenAI/kDeepSeek/kXAI/kOllama) */
+    AIProviderType type() const override { return config_.provider_type; }
 
-    std::string name() const override { return "OpenAI 兼容"; }
+    /** 返回实际的提供商名称 */
+    std::string name() const override {
+        return AIConfig::provider_name(config_.provider_type);
+    }
 
 private:
     /** 存储的配置副本 */
@@ -61,7 +71,7 @@ private:
     std::string parse_chat_response(const std::string& response_body);
 
     /**
-     * 发送 HTTP 请求 (通过 WinHTTP 或 libcurl)
+     * 发送 HTTP 请求 (通过 WinHTTP)
      * @param body JSON 请求体
      * @return HTTP 响应体
      */

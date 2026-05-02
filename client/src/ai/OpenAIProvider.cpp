@@ -3,6 +3,7 @@
  * C++17
  *
  * 使用 WinHTTP 发送请求到 OpenAI 兼容 API
+ * 支持: OpenAI, DeepSeek, xAI Grok, Ollama (本地)
  */
 #include "OpenAIProvider.h"
 
@@ -37,7 +38,12 @@ void OpenAIProvider::set_config(const AIConfig& config) {
 }
 
 bool OpenAIProvider::is_available() const {
-    return !api_endpoint_.empty() && !api_key_.empty();
+    if (api_endpoint_.empty()) return false;
+    // Ollama 本地模型不需要 API key
+    if (config_.provider_type == AIProviderType::kOllama) {
+        return true;
+    }
+    return !api_key_.empty();
 }
 
 bool OpenAIProvider::test_connection() {
@@ -213,11 +219,15 @@ std::string OpenAIProvider::http_post(const std::string& body) {
         return "";
     }
 
-    // 设置 headers
-    std::wstring auth_header = L"Authorization: Bearer " + std::wstring(api_key_.begin(), api_key_.end());
+    // 设置 Content-Type header
     std::wstring content_type = L"Content-Type: application/json";
-    WinHttpAddRequestHeaders(hRequest, auth_header.c_str(), -1, WINHTTP_ADDREQ_FLAG_ADD);
     WinHttpAddRequestHeaders(hRequest, content_type.c_str(), -1, WINHTTP_ADDREQ_FLAG_ADD);
+
+    // 条件添加 Authorization header (Ollama 本地模型不需要 API key)
+    if (!api_key_.empty()) {
+        std::wstring auth_header = L"Authorization: Bearer " + std::wstring(api_key_.begin(), api_key_.end());
+        WinHttpAddRequestHeaders(hRequest, auth_header.c_str(), -1, WINHTTP_ADDREQ_FLAG_ADD);
+    }
 
     // 发送请求
     if (!WinHttpSendRequest(hRequest, nullptr, 0,

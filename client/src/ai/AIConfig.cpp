@@ -51,7 +51,11 @@ AIConfig AIConfig::from_json(const std::string& json) {
 
     std::string pt = find_value("provider_type");
     if (!pt.empty()) {
-        config.provider_type = static_cast<AIProviderType>(std::stoi(pt));
+        int pt_val = std::stoi(pt);
+        // 支持值范围: 0 (kNone) ~ 6 (kCustom)
+        if (pt_val >= 0 && pt_val <= 6) {
+            config.provider_type = static_cast<AIProviderType>(pt_val);
+        }
     }
     config.api_endpoint = find_value("api_endpoint");
     config.api_key = find_value("api_key");

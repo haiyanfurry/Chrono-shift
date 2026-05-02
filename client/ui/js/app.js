@@ -268,7 +268,7 @@ function saveAIConfig() {
     AIChat.config.provider = document.getElementById('ai-provider')?.value || 'openai';
     AIChat.config.apiEndpoint = document.getElementById('ai-endpoint')?.value || '';
     AIChat.config.apiKey = document.getElementById('ai-key')?.value || '';
-    AIChat.config.model = document.getElementById('ai-model')?.value || 'gpt-3.5-turbo';
+    AIChat.config.model = document.getElementById('ai-model')?.value || 'gpt-4o';
     AIChat.config.maxTokens = parseInt(document.getElementById('ai-max-tokens')?.value || '2048', 10);
     AIChat.config.temperature = parseFloat(document.getElementById('ai-temperature')?.value || '0.7');
     AIChat.config.systemPrompt = document.getElementById('ai-system-prompt')?.value || '你是一个有用的 AI 助手。';
@@ -281,8 +281,11 @@ function testAIConnection() {
     if (!window.AIChat) return;
     
     // 先保存当前表单值到配置
+    const provider = document.getElementById('ai-provider')?.value || 'openai';
+    AIChat.config.provider = provider;
     AIChat.config.apiEndpoint = document.getElementById('ai-endpoint')?.value || '';
     AIChat.config.apiKey = document.getElementById('ai-key')?.value || '';
+    AIChat.config.model = document.getElementById('ai-model')?.value || '';
     
     const statusEl = document.getElementById('ai-connection-status');
     if (statusEl) {
@@ -299,12 +302,55 @@ function testAIConnection() {
 }
 
 function onAIProviderChange() {
+    if (!window.AIChat) return;
+    
     const provider = document.getElementById('ai-provider')?.value;
     const endpointInput = document.getElementById('ai-endpoint');
-    if (endpointInput && provider === 'openai') {
-        endpointInput.placeholder = 'https://api.openai.com';
-    } else if (endpointInput) {
-        endpointInput.placeholder = 'https://your-custom-api.com';
+    const keyInput = document.getElementById('ai-key');
+    const modelInput = document.getElementById('ai-model');
+    
+    // 获取提供商预设信息
+    const info = AIChat.getProviderInfo ? AIChat.getProviderInfo(provider) : null;
+    if (!info) return;
+    
+    // 自动填充默认 endpoint
+    if (endpointInput) {
+        endpointInput.value = info.endpoint || '';
+        endpointInput.placeholder = info.endpoint || 'https://your-api.com';
+        // Gemini 的 endpoint 固定，禁用编辑
+        endpointInput.disabled = (provider === 'gemini');
+        if (provider === 'gemini') {
+            endpointInput.title = 'Gemini API 端点固定，无需修改';
+        } else {
+            endpointInput.title = '';
+        }
+    }
+    
+    // 自动填充默认模型
+    if (modelInput) {
+        modelInput.value = info.model || '';
+        modelInput.placeholder = info.model || '输入模型名称';
+    }
+    
+    // 更新 Key 输入框 placeholder
+    if (keyInput) {
+        if (provider === 'ollama') {
+            keyInput.placeholder = 'Ollama 本地运行无需 API Key';
+            keyInput.disabled = true;
+            keyInput.value = '';
+        } else if (provider === 'gemini') {
+            keyInput.placeholder = '输入 Gemini API Key';
+            keyInput.disabled = false;
+        } else {
+            keyInput.placeholder = 'sk-...';
+            keyInput.disabled = false;
+        }
+    }
+    
+    // 更新连接状态提示
+    const statusEl = document.getElementById('ai-connection-status');
+    if (statusEl) {
+        statusEl.textContent = '';
     }
 }
 

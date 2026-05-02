@@ -272,7 +272,11 @@
                             <div class="form-group">
                                 <label>AI 提供商</label>
                                 <select id="ai-provider" onchange="onAIProviderChange()">
-                                    <option value="openai">OpenAI 兼容</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="deepseek">DeepSeek</option>
+                                    <option value="xai">xAI Grok</option>
+                                    <option value="ollama">Ollama（本地）</option>
+                                    <option value="gemini">Google Gemini</option>
                                     <option value="custom">自定义 API</option>
                                 </select>
                             </div>
@@ -286,7 +290,7 @@
                             </div>
                             <div class="form-group">
                                 <label>模型名称</label>
-                                <input type="text" id="ai-model" placeholder="gpt-3.5-turbo">
+                                <input type="text" id="ai-model" placeholder="gpt-4o">
                             </div>
                             <div class="form-group">
                                 <label>温度 (Temperature): <span id="ai-temp-value">0.7</span></label>
