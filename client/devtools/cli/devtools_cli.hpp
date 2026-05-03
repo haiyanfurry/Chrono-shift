@@ -59,6 +59,8 @@ void print_json(const char* json, int indent);
 // ============================================================
 namespace chrono::client::cli {
 
+using namespace std::string_view_literals;
+
 // ============================================================
 // 类型别名
 // ============================================================
@@ -150,6 +152,16 @@ struct Config {
     }
 };
 
+// TLS 外部 C 函数 (由 tls_client.c 实现)
+extern "C" {
+    int  tls_client_init(const char* cert_dir);
+    int  tls_client_connect(void** ssl, const char* host, unsigned short port);
+    int  tls_write(void* ssl, const char* data, size_t len);
+    int  tls_read(void* ssl, char* buf, size_t len);
+    void tls_close(void* ssl);
+    const char* tls_last_error(void);
+}
+
 // ============================================================
 // TLS RAII 包装 (替代 void* ws_ssl 裸指针)
 // ============================================================
@@ -226,15 +238,6 @@ public:
 
 private:
     void* ssl_ = nullptr;
-
-    // TLS 外部 C 函数
-    extern "C" int  tls_client_init(const char* cert_dir);
-    extern "C" int  tls_client_connect(void** ssl, const char* host,
-                                        unsigned short port);
-    extern "C" int  tls_write(void* ssl, const char* data, size_t len);
-    extern "C" int  tls_read(void* ssl, char* buf, size_t len);
-    extern "C" void tls_close(void* ssl);
-    extern "C" const char* tls_last_error(void);
 };
 
 // ============================================================

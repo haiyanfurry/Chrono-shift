@@ -18,6 +18,8 @@
  */
 #include "../devtools_cli.hpp"
 
+namespace cli = chrono::client::cli;
+
 #include <print>     // std::println
 #include <string>    // std::string
 #include <cstdio>    // std::snprintf, std::fopen, std::fclose, std::remove
