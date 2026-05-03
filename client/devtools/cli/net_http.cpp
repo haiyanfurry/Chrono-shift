@@ -12,6 +12,9 @@
  */
 #include "devtools_cli.hpp"
 
+namespace cli = chrono::client::cli;
+using namespace cli;
+
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
