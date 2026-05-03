@@ -1,0 +1,2 @@
+cargo:rustc-link-arg=c:\Users\haiyan\Chrono-shift\client\security\asm\obfuscate.obj
+cargo:rerun-if-changed=asm/obfuscate.asm

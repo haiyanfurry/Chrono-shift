@@ -1,0 +1,14 @@
+c:\Users\haiyan\Chrono-shift\client\security\target\debug\deps\serde-ce5c19fd3c5071fc.d: C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs c:\Users\haiyan\Chrono-shift\client\security\target\debug\build\serde-9902bda3ef1d28e8\out/private.rs
+
+c:\Users\haiyan\Chrono-shift\client\security\target\debug\deps\libserde-ce5c19fd3c5071fc.rlib: C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs c:\Users\haiyan\Chrono-shift\client\security\target\debug\build\serde-9902bda3ef1d28e8\out/private.rs
+
+c:\Users\haiyan\Chrono-shift\client\security\target\debug\deps\libserde-ce5c19fd3c5071fc.rmeta: C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs c:\Users\haiyan\Chrono-shift\client\security\target\debug\build\serde-9902bda3ef1d28e8\out/private.rs
+
+C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\lib.rs:
+C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\integer128.rs:
+C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\mod.rs:
+C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\de.rs:
+C:\Users\haiyan\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde-1.0.228\src\private\ser.rs:
+c:\Users\haiyan\Chrono-shift\client\security\target\debug\build\serde-9902bda3ef1d28e8\out/private.rs:
+
+# env-dep:OUT_DIR=c:\\Users\\haiyan\\Chrono-shift\\client\\security\\target\\debug\\build\\serde-9902bda3ef1d28e8\\out
