@@ -1,284 +1,312 @@
 # 墨竹 (Chrono-shift) 综合测试报告
 
-> **测试时间**: 2026年4月  
-> **测试环境**: Windows 11, 本地服务器  
-> **项目版本**: v0.2.0
+> **测试时间**: 2026年5月  
+> **测试环境**: Windows 11  
+> **项目版本**: v2.0.0
+> **架构**: 纯客户端架构 (服务端 `server/` 已移除)
 
 ---
 
-## 1. 安全渗透测试
+## 1. ASM 私有混淆加密集成测试
 
-**文件**: [`tests/security_pen_test.sh`](../tests/security_pen_test.sh)
+**测试脚本**: [`tests/asm_obfuscation_test.sh`](../tests/asm_obfuscation_test.sh)
+**测试报告**: [`reports/asm_obfuscation_results.md`](asm_obfuscation_results.md)
 
-### 测试类别
+### 测试结果: 46/46 ✅ 全部通过
 
-| # | 类别 | 子测试 | 预期结果 |
-|---|------|--------|---------|
-| 1 | SQL 注入 | OR 1=1, UNION SELECT, DROP TABLE | 服务端正确转义/拒绝恶意输入 |
-| 2 | XSS 攻击 | `<script>` 标签, `<img onerror>` | 输入被 HTML 转义, 不执行脚本 |
-| 3 | 路径遍历 | `../../../etc/passwd`, `..\..\` | 路径被规范化/拒绝 |
-| 4 | JWT 伪造 | alg:none, 过期 token, 随机字符串 | 服务端验证签名, 拒绝无效 token |
-| 5 | 权限绕过 | 未授权访问受保护接口 | 返回 401/403 |
-| 6 | 大负载测试 | 1000 字符用户名, 10000 字符消息 | 服务端正确处理/截断 |
-| 7 | 输入验证 | 空值, 特殊字符, 超长输入 | 服务端正确校验 |
-| **8** | **CSRF 防护** | 缺失 Origin 头/跨域请求/空 CSRF Token/无效 Token/text/plain 绕过 | **新增** 返回 401-403 |
-| **9** | **SSRF 防护** | 127.0.0.1/10.0.0.1/169.254.169.254/file:// 协议/URL 重定向/DNS rebinding | **新增** 请求被拒绝 |
-| **10** | **HTTPS 降级** | HTTP 明文访问/TLS 1.0 强制降级 | **新增** 连接被拒绝 |
+| 阶段 | 描述 | 验证项目 | 结果 |
+|------|------|---------|------|
+| **P1** | NASM 算法实现 | 文件存在、`asm_obfuscate` 导出、`asm_deobfuscate` 导出 | ✅ 3/3 |
+| **P2** | build.rs 编译脚本 | NASM 调用、Rust 链接、监听变更 | ✅ 3/3 |
+| **P3** | Rust FFI 桥接 | FFI 声明、密钥类型、单元测试 | ✅ 4/4 |
+| **P4** | crypto.rs 封装 | FFI 导出、hex 密钥解析、asm_bridge 调用 | ✅ 4/4 |
+| **P5** | lib.rs 入口 | asm_bridge 注册、obfuscate/deobfuscate FFI | ✅ 3/3 |
+| **P6** | Cargo.toml | staticlib + cdylib、build.rs | ✅ 2/2 |
+| **P7** | C++ CryptoEngine | 头文件声明、实现调用 Rust FFI | ✅ 4/4 |
+| **P8** | CLI 调试命令 | 初始化函数、命令注册、genkey 子命令 | ✅ 4/4 |
 
-### 执行命令
+### Rust 单元测试 (cargo test)
 
-```bash
-bash tests/security_pen_test.sh
+```
+test test_different_keys ... ok
+test test_single_obfuscate ... ok
+test test_empty_data ... ok
+test test_obfuscate_deobfuscate_roundtrip ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured
 ```
 
----
+### 算法: ChronoStream v1
 
-## 2. API 接口验证
-
-**文件**: [`tests/api_verification_test.sh`](../tests/api_verification_test.sh)
-
-| # | 接口 | 方法 | 路径 | 状态 |
-|---|------|------|------|------|
-| 1 | 健康检查 | GET | `/api/health` | ✅ |
-| 2 | 用户注册 | POST | `/api/user/register` | ✅ |
-| 3 | 用户登录 | POST | `/api/user/login` | ✅ |
-| 4 | 获取资料 | GET | `/api/user/profile` | ✅ |
-| 5 | 更新资料 | PUT | `/api/user/update` | ✅ |
-| 6 | 搜索用户 | GET | `/api/user/search` | ✅ |
-| 7 | 获取好友 | GET | `/api/user/friends` | ✅ |
-| 8 | 发送消息 | POST | `/api/message/send` | ✅ |
-| 9 | 获取消息 | GET | `/api/message/list` | ✅ |
-| 10 | 获取模板 | GET | `/api/templates` | ✅ |
-| 11 | 应用模板 | POST | `/api/templates/apply` | ✅ |
-| **2.6** | **文件系统** | POST/GET | 上传/列表/下载/头像/未授权 | **新增** |
-| **2.7** | **好友系统** | POST/GET | 注册第二用户/添加好友/好友列表 | **新增** |
-| **2.8** | **模板 CRUD** | POST/GET/PUT/DELETE | 创建/列表/更新/应用/删除模板 | **新增** |
-
-**处理器模块映射**:
-
-| 模块 | 源文件 | 行数 | 覆盖接口 |
-|------|--------|------|---------|
-| 用户系统 | [`user_handler.c`](../server/src/user_handler.c) | 405 | 7 个接口 |
-| 消息服务 | [`message_handler.c`](../server/src/message_handler.c) | 618 | 2 个接口 + WebSocket |
-| 社区模板 | [`community_handler.c`](../server/src/community_handler.c) | 450 | 4 个接口 |
-| 文件服务 | [`file_handler.c`](../server/src/file_handler.c) | 738 | 3 个接口 |
+| 特性 | 值 |
+|------|-----|
+| 算法类型 | 自研对称流密码 |
+| 密钥长度 | 512 位 (64 字节) |
+| KSA | 3-pass Fisher-Yates 置换 |
+| 状态向量 | 8 字节级联更新 |
+| S-Box | 256 字节动态生成 |
+| 实现语言 | NASM x64 |
+| 调试记录 | 3 个 ASM 级 bug 已修复 |
 
 ---
 
-## 3. CLI 调试工具扩展
+## 2. DevTools CLI 测试
 
-**文件**: [`server/tools/debug_cli.c`](../server/tools/debug_cli.c) (2317 行)
+**文件**: [`client/devtools/cli/main.c`](../client/devtools/cli/main.c) (232 行)
+**命令模块**: [`client/devtools/cli/commands/`](../client/devtools/cli/commands/) (26 个命令文件)
 
-| 命令 | 子命令 | 功能 | 状态 |
-|------|--------|------|------|
-| `help` | — | 显示所有可用命令（含 E1/E2 帮助） | ✅ 已增强 |
-| `ipc types` | — | 列出所有 IPC 消息类型 (10 种) | ✅ |
-| `ipc send` | `<hex> <json>` | 发送 IPC 消息 | ✅ |
-| `user` | `register/login/profile/search` | 用户管理 | ✅ |
-| **`ws`** | **`connect/send/recv/close/status`** | **WebSocket 调试 (E1)** | **新增** |
-| **`msg`** | **`list/get/send`** | **数据库消息操作 (E2)** | **新增** |
-| **`friend`** | **`list/add`** | **好友管理 (E2)** | **新增** |
-| **`db`** | **`list`** | **数据库内容浏览 (E2)** | **新增** |
-| `exit/quit` | — | 退出 | ✅ |
+### 命令分类
 
-### WebSocket 调试 (E1) 实现详情
+| 分类 | 命令 | 功能 | 状态 |
+|------|------|------|------|
+| **基础** | `health` | 服务健康检查 | ✅ |
+| | `endpoint` | 端点配置 | ✅ |
+| | `token` | 令牌管理 | ✅ |
+| | `ipc` | IPC 消息调试 | ✅ |
+| | `user` | 用户操作 | ✅ |
+| **客户端本地** | `session` | 会话管理 | ✅ |
+| | `config` | 配置管理 | ✅ |
+| | `storage` | 安全存储 | ✅ |
+| | `crypto` | E2E 加密测试 | ✅ |
+| | `network` | 网络诊断 | ✅ |
+| **WebSocket** | `ws` | WS 连接/发送/接收/监控 | ✅ |
+| **数据库** | `msg` | 消息操作 | ✅ |
+| | `friend` | 好友管理 | ✅ |
+| | `db` | 数据库浏览 | ✅ |
+| **连接管理** | `connect` | 服务器连接 | ✅ |
+| | `disconnect` | 服务器断连 | ✅ |
+| **安全诊断** | `tls` | TLS 信息 | ✅ |
+| | `gen_cert` | 证书生成 | ✅ |
+| | `json` | JSON 解析/美化 | ✅ |
+| | `trace` | 请求追踪 | ✅ |
+| **ASM 混淆** | `obfuscate` | **genkey/encrypt/decrypt/test** | ✅ |
+| **性能测试** | `ping` | 延迟测试 | ✅ |
+| | `watch` | 实时监控 | ✅ |
+| | `rate_test` | QPS 压力测试 | ✅ |
 
-- **SHA-1 实现**: 纯 C 实现 (不依赖 OpenSSL)，用于 WebSocket 握手 Accept Key 计算
-- **Base64 编码**: 自定义 Base64 实现
-- **帧编解码**: 支持 FIN/opcode/mask/payload 的标准 RFC 6455 帧格式
-- **非阻塞 I/O**: `ws recv` 使用非阻塞模式
+### 注册架构
 
-### 数据库操作 (E2) 实现详情
-
-- `msg list` — 通过 `db_get_messages()` 接口列出用户消息
-- `msg send` — 通过 `db_send_message()` 直接写入数据库
-- `friend list/add` — 通过 `db_get_friends()` / `db_add_friend()` 接口
-- `db list` — 支持 `users` / `messages` / `friends` / `templates` 四种类型
-
----
-
-## 4. UI QQ 风格美化改造
-
-**设计风格**: **QQ 风格** · 纯白背景 · `#12B7F5` 蓝色主色调 · `#9EEA6A` 自聊气泡 · 毛玻璃效果 · 不对称气泡
-
-| 文件 | 变更内容 |
-|------|---------|
-| [`variables.css`](../client/ui/css/variables.css) | QQ 风格色系: `--primary: #12B7F5`, `--self-bubble: #9EEA6A`, `--bg-primary: #FFFFFF` |
-| [`login.css`](../client/ui/css/login.css) | 浅蓝渐变背景 + 白色毛玻璃卡片 + 居中简洁布局 |
-| [`main.css`](../client/ui/css/main.css) | 280px 固定侧边栏 + 底部蓝色导航指示条 + 左侧蓝色联系人指示条 |
-| [`chat.css`](../client/ui/css/chat.css) | 绿色自气泡 (`#9EEA6A`) + 白色对方气泡 (`#FFFFFF` 带 `#E0E0E0` 边框) + 不对称圆角 |
-| [`community.css`](../client/ui/css/community.css) | 简化卡片风格 + 更浅阴影 `rgba(0,0,0,0.06)` |
-| [`global.css`](../client/ui/css/global.css) | 添加 `badge-dot` 消息红点类 + 扁平化按钮样式 |
-| [`themes/default.css`](../client/ui/css/themes/default.css) | 纯白默认主题微调 |
-| [`index.html`](../client/ui/index.html) | 标题改为 "QQ 风格社交平台" + 侧边栏外部链接区域 + 状态指示点 |
-
-### 核心 CSS 颜色变量
-
-```css
-:root {
-  --primary: #12B7F5;        /* QQ 蓝 */
-  --primary-hover: #10A5DE;   /* 深蓝 hover */
-  --self-bubble: #9EEA6A;     /* 自聊绿气泡 */
-  --other-bubble: #FFFFFF;    /* 对方白气泡 */
-  --bg-primary: #FFFFFF;      /* 纯白背景 */
-  --sidebar-bg: #F8F9FA;     /* 侧边栏浅灰 */
-  --text-primary: #333333;    /* 深灰文字 */
-  --text-secondary: #999999;  /* 浅灰辅助文字 */
-  --border-color: #E8E8E8;   /* 边框色 */
+```c
+// init_commands.c — 统一注册所有 26 个命令
+void init_commands(void) {
+    init_cmd_health();
+    init_cmd_endpoint();
+    // ... 共 26 个 init 调用
 }
 ```
 
 ---
 
-## 5. 外部网站跳转入口
+## 3. Rust 安全模块测试
 
-| 网站 | URL | 触发方式 |
-|------|-----|---------|
-| Bilibili | <https://www.bilibili.com> | IPC_OPEN_URL + window.open |
-| AcFun | <https://www.acfun.cn> | IPC_OPEN_URL + window.open |
-| CP 漫展官网 | <https://www.comic-expo.com> | IPC_OPEN_URL + window.open |
+**文件**: [`client/security/`](../client/security/)
 
-**IPC 消息类型**: `IPC_OPEN_URL = 0x50`  
-**协议文件**: [`ipc_bridge.h`](../client/include/ipc_bridge.h) + [`ipc.js`](../client/ui/js/ipc.js)
+| 模块 | 文件 | 行数 | 测试状态 |
+|------|------|------|---------|
+| 库入口 | [`lib.rs`](../client/security/src/lib.rs) | 78 | ✅ cargo check |
+| E2E 加密 | [`crypto.rs`](../client/security/src/crypto.rs) | 253 | ✅ cargo check |
+| ASM 桥接 | [`asm_bridge.rs`](../client/security/src/asm_bridge.rs) | 128 | ✅ 4/4 tests |
+| 安全存储 | [`secure_storage.rs`](../client/security/src/secure_storage.rs) | 118 | ✅ cargo check |
+| 输入校验 | [`sanitizer.rs`](../client/security/src/sanitizer.rs) | 68 | ✅ cargo check |
+| 会话管理 | [`session.rs`](../client/security/src/session.rs) | 93 | ✅ cargo check |
 
----
+### FFI 导出函数
 
-## 6. 压力测试框架
-
-**文件**: [`server/tools/stress_test.c`](../server/tools/stress_test.c) (776 行)
-
-| 功能 | 描述 |
+| 函数 | 用途 |
 |------|------|
-| 并发模型 | 多线程 HTTP 请求 (最多 64 线程) |
-| QPS 控制 | 精确到微秒的速率限制 |
-| 统计指标 | QPS, P50/P90/P95/P99 延迟, 错误率, 成功率 |
-| 测试场景 | 健康检查, 注册, 登录, 获取模板, 发送消息 |
-| 报告生成 | 自动保存 Markdown 报告到 `reports/` |
-| 抗冲击评估 | 基于错误率的自动等级评定 |
-| 平台支持 | Windows (WinSock2) + Linux (POSIX) |
+| `rust_client_init()` | 初始化安全模块 |
+| `rust_client_generate_keypair()` | 生成 E2E 密钥对 |
+| `rust_client_encrypt_e2e()` | AES-256-GCM 加密 |
+| `rust_client_decrypt_e2e()` | AES-256-GCM 解密 |
+| `rust_client_obfuscate_message()` | ASM 混淆加密 |
+| `rust_client_deobfuscate_message()` | ASM 混淆解密 |
+| `rust_client_obfuscate()` | 简化 ASM 加密 FFI |
+| `rust_client_deobfuscate()` | 简化 ASM 解密 FFI |
+| `rust_session_save/get_token/is_logged_in/clear()` | 会话管理 |
 
-**编译命令**:
+---
+
+## 4. AI 多提供商集成
+
+**文档**: [`docs/AI_INTEGRATION.md`](../docs/AI_INTEGRATION.md)
+
+| 提供商 | 协议 | C++ 实现 | JS 实现 | 状态 |
+|--------|------|----------|---------|------|
+| OpenAI | OpenAI 兼容 | [`OpenAIProvider`](../client/src/ai/OpenAIProvider.cpp) | [`ai_chat.js`](../client/ui/js/ai_chat.js) | ✅ |
+| DeepSeek | OpenAI 兼容 | 复用 `OpenAIProvider` | `ai_chat.js` | ✅ |
+| xAI Grok | OpenAI 兼容 | 复用 `OpenAIProvider` | `ai_chat.js` | ✅ |
+| Ollama | OpenAI 兼容 | 复用 `OpenAIProvider` | `ai_chat.js` | ✅ |
+| Gemini | Google 原生 | [`GeminiProvider`](../client/src/ai/GeminiProvider.cpp) | `ai_chat.js` | ✅ |
+| 自定义 | 用户指定 | [`CustomProvider`](../client/src/ai/CustomProvider.cpp) | `ai_chat.js` | ✅ |
+
+### AI 模块文件清单
+
+| 文件 | 类型 | 行数 |
+|------|------|------|
+| [`AIProvider.h`](../client/src/ai/AIProvider.h) | C++ 抽象基类 | ~130 |
+| [`AIProvider.cpp`](../client/src/ai/AIProvider.cpp) | 工厂方法 + 基类实现 | ~50 |
+| [`OpenAIProvider.h/.cpp`](../client/src/ai/OpenAIProvider.h) | OpenAI 兼容实现 | ~270 |
+| [`GeminiProvider.h/.cpp`](../client/src/ai/GeminiProvider.h) | Gemini 原生实现 | ~200 |
+| [`CustomProvider.h/.cpp`](../client/src/ai/CustomProvider.h) | 自定义 API | ~200 |
+| [`AIConfig.h/.cpp`](../client/src/ai/AIConfig.h) | 配置管理 | ~140 |
+| [`AIChatSession.h/.cpp`](../client/src/ai/AIChatSession.h) | 会话管理 | ~150 |
+| [`ai_chat.js`](../client/ui/js/ai_chat.js) | 前端 AI 对话 | ~550 |
+| [`ai_smart_reply.js`](../client/ui/js/ai_smart_reply.js) | 智能回复 | ~100 |
+
+---
+
+## 5. 插件系统
+
+| 文件 | 类型 | 行数 |
+|------|------|------|
+| [`types.h`](../client/src/plugin/types.h) | 类型定义 | ~20 |
+| [`PluginInterface.h`](../client/src/plugin/PluginInterface.h) | 插件接口抽象 | ~40 |
+| [`PluginManifest.h/.cpp`](../client/src/plugin/PluginManifest.h) | manifest 解析 | ~120 |
+| [`PluginManager.h/.cpp`](../client/src/plugin/PluginManager.h) | 生命周期管理 | ~180 |
+| [`plugin_catalog.json`](../client/plugins/plugin_catalog.json) | 插件目录 | — |
+| [`example_plugin/manifest.json`](../client/plugins/example_plugin/manifest.json) | 示例 manifest | — |
+| [`example_plugin/plugin.js`](../client/plugins/example_plugin/plugin.js) | 示例插件 JS | — |
+
+---
+
+## 6. 网络层编译验证
+
+| # | 源文件 | 行数 | 语言 | 编译状态 |
+|---|--------|------|------|---------|
+| 1 | [`TcpConnection.cpp`](../client/src/network/TcpConnection.cpp) | 361 | C++17 | ✅ |
+| 2 | [`TlsWrapper.cpp`](../client/src/network/TlsWrapper.cpp) | 144 | C++17 | ✅ |
+| 3 | [`HttpConnection.cpp`](../client/src/network/HttpConnection.cpp) | 250 | C++17 | ✅ |
+| 4 | [`WebSocketClient.cpp`](../client/src/network/WebSocketClient.cpp) | 375 | C++17 | ✅ |
+| 5 | [`NetworkClient.cpp`](../client/src/network/NetworkClient.cpp) | 214 | C++17 | ✅ |
+| 6 | [`tls_client.c`](../client/src/network/tls_client.c) | 209 | C99 | ✅ |
+| 7 | [`Sha1.cpp`](../client/src/network/Sha1.cpp) | — | C++17 | ✅ |
+| 8 | [`ClientHttpServer.cpp`](../client/src/app/ClientHttpServer.cpp) | 531 | C++17 | ✅ |
+| 9 | [`IpcBridge.cpp`](../client/src/app/IpcBridge.cpp) | 129 | C++17 | ✅ |
+| 10 | [`WebViewManager.cpp`](../client/src/app/WebViewManager.cpp) | 212 | C++17 | ✅ |
+| 11 | [`LocalStorage.cpp`](../client/src/storage/LocalStorage.cpp) | 252 | C++17 | ✅ |
+| 12 | [`Main.cpp`](../client/src/app/Main.cpp) | 52 | C++17 | ✅ |
+| 13 | [`CryptoEngine.cpp`](../client/src/security/CryptoEngine.cpp) | 169 | C++17 | ✅ |
+
+---
+
+## 7. 文件变更清单 (v0.2.0 → v2.0.0)
+
+### 新增文件
+
+| 文件 | 行数 | 用途 |
+|------|------|------|
+| `client/security/asm/obfuscate.asm` | ~230 | NASM ChronoStream v1 算法 |
+| `client/security/src/asm_bridge.rs` | 128 | Rust → ASM FFI 桥接 |
+| `client/security/build.rs` | 36 | NASM 编译脚本 |
+| `client/devtools/cli/main.c` | 232 | DevTools CLI 入口 |
+| `client/devtools/cli/net_http.c` | — | CLI HTTP 客户端 |
+| `client/devtools/cli/commands/init_commands.c` | 96 | 命令注册中心 |
+| `client/devtools/cli/commands/cmd_*.c` | 26 个命令 | 各命令模块 |
+| `client/devtools/core/DevToolsEngine.h/.cpp` | 493 | In-App DevTools 引擎 |
+| `client/devtools/core/DevToolsHttpApi.h/.cpp` | 360 | DevTools HTTP API |
+| `client/devtools/core/DevToolsIpcHandler.h/.cpp` | 167 | DevTools IPC 拦截 |
+| `client/devtools/ui/js/devtools.js` | ~1200 | DevTools 前端面板 |
+| `client/src/ai/OpenAIProvider.h/.cpp` | ~270 | AI OpenAI 兼容实现 |
+| `client/src/ai/GeminiProvider.h/.cpp` | ~200 | AI Gemini 实现 |
+| `client/src/ai/CustomProvider.h/.cpp` | ~200 | AI 自定义 API |
+| `client/src/ai/AIChatSession.h/.cpp` | ~150 | AI 对话会话 |
+| `client/src/plugin/PluginManifest.h/.cpp` | ~120 | 插件 manifest 解析 |
+| `client/src/plugin/PluginManager.h/.cpp` | ~180 | 插件生命周期管理 |
+| `client/plugins/plugin_catalog.json` | — | 插件目录 |
+| `client/plugins/example_plugin/manifest.json` | — | 示例插件 manifest |
+| `client/plugins/example_plugin/plugin.js` | — | 示例插件脚本 |
+| `docs/ASM_OBFUSCATION.md` | — | ChronoStream v1 算法文档 |
+| `docs/PROJECT_OVERVIEW.md` | — | 项目全景概览 |
+| `plans/phase_handover.md` | ~500 | 项目交接文档 |
+| `plans/phase_rust_asm_obfuscation_plan.md` | 428 | ASM 开发计划 |
+| `plans/phase_ai_multi_provider.md` | — | AI 多提供商计划 |
+| `plans/phase_devtools_developer_mode.md` | — | DevTools 计划 |
+| `tests/asm_obfuscation_test.sh` | 250 | ASM 集成测试 |
+
+### 修改文件
+
+| 文件 | 变更 | 说明 |
+|------|------|------|
+| `client/security/src/lib.rs` | 新增 asm_bridge 模块 + FFI 导出 | 集成 ASM 加密 |
+| `client/security/src/crypto.rs` | 新增 obfuscate/deobfuscate | ASM 混淆封装 |
+| `client/security/Cargo.toml` | staticlib + cdylib + build.rs | 构建配置 |
+| `client/src/security/CryptoEngine.h/.cpp` | 新增 obfuscate_message | C++ 接口 |
+| `client/security/include/chrono_client_security.h` | 新增 ASM 函数声明 | C 头文件 |
+| `client/ui/js/ai_chat.js` | 新增 6 提供商支持 | AI 对话 |
+| `client/ui/js/ipc.js` | 新增扩展注册 | 插件兼容 |
+| `client/ui/index.html` | 新增 AI 设置 | UI 配置 |
+| `README.md` | v0.3.0 → v2.0.0 | 完全重写 |
+| `plans/ARCHITECTURE.md` | v0.2.0 → v2.0.0 | 完全重写 |
+
+### 移除文件
+
+| 文件 | 说明 |
+|------|------|
+| `server/` (整个目录) | 服务端已移除，纯客户端架构 |
+
+---
+
+## 8. 完整操作流程
+
 ```bash
-cd server && make stress-test
+# ─── 构建 ───
+
+# 1. 编译 Rust 安全模块 (含 NASM ASM)
+cd client/security
+cargo build --release
+cd ../..
+
+# 2. 编译 DevTools CLI
+cd client/devtools/cli
+make
+cd ../../..
+
+# 3. 编译桌面客户端
+cd client
+cmake -B build -G "MinGW Makefiles"
+cmake --build build
+cd ..
+
+# ─── 测试 ───
+
+# 4. Rust 单元测试 (ASM 加密/解密)
+cd client/security
+cargo test --lib
+cd ../..
+
+# 5. ASM 集成测试
+bash tests/asm_obfuscation_test.sh
+
+# 6. CLI 功能测试
+client/devtools/cli/chrono-devtools health
+client/devtools/cli/chrono-devtools obfuscate test
+
+# ─── 运行 ───
+
+# 7. 启动客户端
+./client/build/Release/chrono-client.exe
 ```
 
-**使用示例**:
-```bash
-out/stress_test --host 127.0.0.1 --port 4443 --threads 8 --qps 200 --duration 60
-out/stress_test --list-scenarios
-out/stress_test --scenario 2 --qps 500 --threads 16 --duration 120
-```
+---
+
+## 9. 已知问题 (S1-S11)
+
+完整列表见 [`plans/phase_handover.md#4-已知问题清单`](../plans/phase_handover.md#4-已知问题清单)。
+
+| ID | 严重程度 | 简述 | 状态 |
+|----|----------|------|------|
+| S1 | 🔴 严重 | CSP `unsafe-inline` + `unsafe-eval` | 🟡 待修复 |
+| S2 | 🔴 严重 | Token 存入 localStorage | 🟡 待修复 |
+| S3 | 🟡 中等 | JSON 注入 (`ClientHttpServer.cpp`) | 🟡 待修复 |
+| S4 | 🟡 中等 | innerHTML XSS (`contacts.js`) | 🟡 待修复 |
+| S5 | 🟡 中等 | innerHTML XSS (`community.js`) | 🟡 待修复 |
+| S6 | 🟡 中等 | IPC 路由线性匹配 (`IpcBridge.cpp:70`) | 🟡 待修复 |
+| S7 | 🟡 中等 | SSRF 风险 (`community.js:66`) | 🟡 待修复 |
+| S8 | 🟢 低 | LocalStorage 部分 stub | 📋 待实现 |
+| S9 | 🟢 低 | WebViewManager 部分 stub | 📋 待实现 |
+| S10 | 🟢 低 | IPC send_to_js stub | 📋 待实现 |
+| S11 | ℹ️ 信息 | oauth.js 递归调用自身 | 📋 待修复 |
 
 ---
 
-## 7. 回环测试 (Loopback Test)
-
-**文件**: [`tests/loopback_test.sh`](../tests/loopback_test.sh)
-
-| 步骤 | 测试内容 | 描述 |
-|------|---------|------|
-| 1 | 服务器可访问性 | 自动检测/启动/等待服务器 |
-| 2 | 健康检查 | GET `/api/health` → 200 |
-| 3 | 用户注册 | POST 注册 → 获取 user_id |
-| 4 | 用户登录 | POST 登录 → 获取 JWT Token |
-| 5 | 获取资料 | GET profile → 验证昵称 |
-| 6 | 更新资料 | PUT update → 修改昵称 |
-| 7 | 发送消息 | POST message → 获取 message_id |
-| 8 | 获取历史 | GET messages → 验证消息数 |
-| 9 | 获取模板 | GET templates → 验证模板数 |
-| 10 | 搜索用户 | GET search → 验证搜索结果 |
-| 11 | CLI 验证 | 验证 debug_cli 的 IPC 命令 |
-| **12** | **文件上传下载** | **POST 上传文件 → GET 下载验证** | **新增** |
-| **13** | **模板 CRUD** | **创建模板 → 应用模板 → 列表验证** | **新增** |
-| **14** | **好友系统** | **添加好友 → 好友列表验证** | **新增** |
-
----
-
-## 8. 编译验证
-
-### 最终编译验证结果
-
-所有 **17 个 server 源文件** 零错误通过编译:
-
-| # | 源文件 | 行数 | 编译状态 |
-|---|--------|------|---------|
-| 1 | [`main.c`](../server/src/main.c) | 189 | ✅ 通过 |
-| 2 | [`http_server.c`](../server/src/http_server.c) | 911 | ✅ 通过 |
-| 3 | [`websocket.c`](../server/src/websocket.c) | 463 | ✅ 通过 |
-| 4 | [`database.c`](../server/src/database.c) | 1214 | ✅ 通过 |
-| 5 | [`user_handler.c`](../server/src/user_handler.c) | 405 | ✅ 通过 |
-| 6 | [`message_handler.c`](../server/src/message_handler.c) | 618 | ✅ 通过 |
-| 7 | [`community_handler.c`](../server/src/community_handler.c) | 450 | ✅ 通过 |
-| 8 | [`file_handler.c`](../server/src/file_handler.c) | 738 | ✅ 通过 |
-| 9 | [`json_parser.c`](../server/src/json_parser.c) | 642 | ✅ 通过 |
-| 10 | [`protocol.c`](../server/src/protocol.c) | 53 | ✅ 通过 |
-| 11 | [`utils.c`](../server/src/utils.c) | 149 | ✅ 通过 |
-| 12 | [`tls_server.c`](../server/src/tls_server.c) | 384 | ✅ 通过 |
-| 13 | [`tls_stub.c`](../server/src/tls_stub.c) | 42 | ✅ 通过 |
-| 14 | [`rust_stubs.c`](../server/src/rust_stubs.c) | 104 | ✅ 通过 |
-| 15 | [`debug_cli.c`](../server/tools/debug_cli.c) | 2317 | ✅ 通过 |
-| 16 | [`stress_test.c`](../server/tools/stress_test.c) | 776 | ✅ 通过 |
-| 17 | [`client_http_server.c`](../client/src/client_http_server.c) | — | ✅ 通过 |
-
-**编译命令**: `gcc -std=c99 -Wall -Wextra -Iinclude -c <file>.c`
-
-> 仅保留预存警告 (platform_compat.h 类型转换、#pragma 未知、未使用函数、snprintf 大小提示)
-
----
-
-## 9. 文件变更清单
-
-| 文件 | 类型 | 变更 | 用途 |
-|------|------|------|------|
-| `server/src/message_handler.c` | **新增** | 618 行 | HTTP/WS 消息系统 |
-| `server/src/community_handler.c` | **新增** | 450 行 | 模板 CRUD |
-| `server/src/file_handler.c` | **新增** | 738 行 | 文件上传/下载/头像 |
-| `server/tools/debug_cli.c` | **修改** | 2317 行 | 增强 ws/msg/friend/db 命令 |
-| `tests/security_pen_test.sh` | **修改** | +13 测试 | CSRF/SSRF/HTTPS降级 |
-| `tests/api_verification_test.sh` | **修改** | +3 节 | 文件/好友/模板 CRUD |
-| `tests/loopback_test.sh` | **修改** | +3 步 | 文件/模板/好友全链路 |
-| `client/ui/css/variables.css` | **修改** | QQ 风格 | #12B7F5/#9EEA6A 色系 |
-| `client/ui/css/login.css` | **修改** | QQ 风格 | 浅蓝渐变白卡 |
-| `client/ui/css/main.css` | **修改** | QQ 风格 | 280px 侧边栏 |
-| `client/ui/css/chat.css` | **修改** | QQ 风格 | 绿/白不对称气泡 |
-| `client/ui/css/community.css` | **修改** | QQ 风格 | 简化卡片 |
-| `client/ui/css/global.css` | **修改** | QQ 风格 | badge-dot 红点 |
-| `client/ui/css/themes/default.css` | **修改** | QQ 风格 | 纯白默认主题 |
-| `client/ui/index.html` | **修改** | QQ 风格 | 标题/外部链接 |
-| `server/tools/stress_test.c` | 已存在 | 776 行 | 压力测试框架 |
-| `cleanup.bat` | 已存在 | — | Windows 清理 |
-| `cleanup.sh` | 已存在 | — | Linux 清理 |
-
----
-
-## 10. 完整操作流程
-
-```bash
-# 1. 编译服务器
-cd server && mingw32-make build
-
-# 2. 编译调试 CLI
-mingw32-make debug-cli
-
-# 3. 编译压力测试工具
-mingw32-make stress-test
-
-# 4. 启动服务器 (另一终端)
-set PATH=D:\mys32\mingw64\bin;%PATH%
-out\chrono-server.exe --port 4443
-
-# 5. 运行安全渗透测试 (10 类, 30+ 测试)
-bash ../tests/security_pen_test.sh
-
-# 6. 运行 API 接口验证 (含文件/好友/模板 CRUD)
-bash ../tests/api_verification_test.sh
-
-# 7. 运行端到端回环测试 (14 步全链路)
-bash ../tests/loopback_test.sh
-
-# 8. 运行压力测试
-out/stress_test --threads 8 --qps 200 --duration 60
-
-# 9. 清理
-cd .. && cleanup.bat --all
-```
+*报告版本: v2.0.0 — 完成于 2026-05-03*
