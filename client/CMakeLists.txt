@@ -1,11 +1,26 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.20)
 project(chrono-client LANGUAGES C CXX)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-set(CMAKE_CXX_STANDARD 17)
+# ============================================================
+# C++23 标准 (需要 GCC 13+ / Clang 16+ / MSVC 2022 17.6+)
+# ============================================================
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# 编译器版本提示
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 13)
+    message(FATAL_ERROR "C++23 需要 GCC 13+, 当前: ${CMAKE_CXX_COMPILER_VERSION}")
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16)
+    message(FATAL_ERROR "C++23 需要 Clang 16+, 当前: ${CMAKE_CXX_COMPILER_VERSION}")
+endif()
+if(CMAKE_CXX_COMPILER_ID MATCHES "MSVC" AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 1936)
+    message(FATAL_ERROR "C++23 需要 MSVC 2022 17.6+ (_MSC_VER >= 1936), 当前: ${CMAKE_CXX_COMPILER_VERSION}")
+endif()
 
 # 查找 Rust 编译出的静态库
 set(RUST_SECURITY_LIB "${CMAKE_CURRENT_SOURCE_DIR}/security/target/release/libchrono_client_security.a")
@@ -42,16 +57,29 @@ file(GLOB_RECURSE CLIENT_CPP_SOURCES
     devtools/core/*.cpp
 )
 
+# === CLI 工具 C++ 源文件 (C++23 迁移) ===
+file(GLOB_RECURSE CLI_CPP_SOURCES
+    devtools/cli/*.cpp
+    tools/*.cpp
+)
+
 # === C 源文件 (旧架构，过渡期保留) ===
 file(GLOB CLIENT_C_SOURCES
     src/*.c
     src/network/*.c
 )
 
+# === CLI C 源文件 (过渡期保留，逐步转换至 .cpp) ===
+file(GLOB CLI_C_SOURCES
+    devtools/cli/commands/*.c
+)
+
 # === 最终源文件列表 ===
 set(CLIENT_SOURCES
     ${CLIENT_CPP_SOURCES}
+    ${CLI_CPP_SOURCES}
     ${CLIENT_C_SOURCES}
+    ${CLI_C_SOURCES}
 )
 
 add_executable(chrono-client ${CLIENT_SOURCES})
@@ -60,8 +88,20 @@ target_include_directories(chrono-client PRIVATE
     include                          # C 头文件 (含 tls_client.h 等)
     src                              # C++ 头文件 (同目录)
     devtools/core                    # DevToolsEngine/HttpApi/IpcHandler 头文件
-    devtools/cli                     # devtools_cli.h 共享头文件
+    devtools/cli                     # devtools_cli.h/devtools_cli.hpp 共享头文件
+    devtools/cli/commands            # cmd_*.hpp 命令头文件
 )
+
+# C++23 特性检测: std::print / std::println / std::expected / std::flat_map
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles("
+    #include <print>
+    int main() { std::println(\"C++23 test\"); return 0; }
+" HAS_CPP23_PRINT)
+if(NOT HAS_CPP23_PRINT)
+    message(WARNING "编译器不支持 std::println — 将回退到 printf")
+    add_compile_definitions(NO_CPP23_PRINT=1)
+endif()
 
 # 链接 WebView2
 set(WEBVIEW2_LIB "${CMAKE_CURRENT_SOURCE_DIR}/lib/Microsoft.Web.WebView2.Core.dll")
