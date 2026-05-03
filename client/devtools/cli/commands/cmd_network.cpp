@@ -1,15 +1,15 @@
 /**
- * cmd_network.cpp — 网络诊断命令
+ * cmd_network.cpp �?网络诊断命令
  * 对应 debug_cli.c:2635 cmd_network
  *
  * C++23 转换: std::println, std::chrono, std::string, namespace cli
  *
- * 完整的 DNS/TCP/TLS/HTTP 四层连通性诊断
+ * 完整�?DNS/TCP/TLS/HTTP 四层连通性诊�?
  */
 #include "../devtools_cli.hpp"
 
 #include <chrono>    // std::chrono::steady_clock
-#include <print>     // std::println
+#include "print_compat.h     // std::println
 #include <string>    // std::string
 #include <string_view> // std::string_view
 #include <cstdlib>   // std::atoi
@@ -53,14 +53,14 @@ extern int http_get_status(const char* response);
 }
 
 /* ============================================================
- * network 命令 - 网络连通性测试
+ * network 命令 - 网络连通性测�?
  * ============================================================ */
 static int cmd_network(int argc, char** argv)
 {
     if (argc < 1) {
-        std::println("用法:");
-        std::println("  network test <host> <port>     - 网络连通性测试");
-        std::println("    测试目标主机的 TCP 连接和 TLS 握手");
+        cli::println("用法:");
+        cli::println("  network test <host> <port>     - 网络连通性测�?);
+        cli::println("    测试目标主机�?TCP 连接�?TLS 握手");
         return -1;
     }
 
@@ -68,28 +68,28 @@ static int cmd_network(int argc, char** argv)
 
     if (subcmd == "test") {
         if (argc < 3) {
-            std::println(stderr, "用法: network test <host> <port>");
-            std::println(stderr, "示例: network test 127.0.0.1 4443");
+            cli::println(stderr, "用法: network test <host> <port>");
+            cli::println(stderr, "示例: network test 127.0.0.1 4443");
             return -1;
         }
 
         const char* test_host = argv[1];
         int test_port = std::atoi(argv[2]);
         if (test_port <= 0 || test_port > 65535) {
-            std::println(stderr, "[-] 无效端口: {}", test_port);
+            cli::println(stderr, "[-] 无效端口: {}", test_port);
             return -1;
         }
 
-        std::println("");
-        std::println("  ╔══════════════════════════════════════════════════════════╗");
-        std::println("  ║     网络连通性测试                                        ║");
-        std::println("  ╚══════════════════════════════════════════════════════════╝");
-        std::println("");
-        std::println("  目标: {}:{}", test_host, test_port);
-        std::println("");
+        cli::println("");
+        cli::println("  ╔══════════════════════════════════════════════════════════╗");
+        cli::println("  �?    网络连通性测�?                                       �?);
+        cli::println("  ╚══════════════════════════════════════════════════════════╝");
+        cli::println("");
+        cli::println("  目标: {}:{}", test_host, test_port);
+        cli::println("");
 
         /* Step 1: DNS 解析 */
-        std::println("  [1/4] DNS 解析...");
+        cli::println("  [1/4] DNS 解析...");
         auto dns_start = std::chrono::steady_clock::now();
         struct hostent* he = gethostbyname(test_host);
         auto dns_end = std::chrono::steady_clock::now();
@@ -97,28 +97,28 @@ static int cmd_network(int argc, char** argv)
         double dns_time = dns_us / 1000.0;
 
         if (!he) {
-            std::println("        ✗ DNS 解析失败: {}", test_host);
+            cli::println("        �?DNS 解析失败: {}", test_host);
 #ifdef _WIN32
-            std::println("        错误码: {}", WSAGetLastError());
+            cli::println("        错误�? {}", WSAGetLastError());
 #endif
             return -1;
         }
 
         struct in_addr addr{};
         std::memcpy(&addr, he->h_addr_list[0], sizeof(addr));
-        std::println("        ✓ DNS 解析成功: {} -> {} ({:.1f} ms)",
+        cli::println("        �?DNS 解析成功: {} -> {} ({:.1f} ms)",
                      test_host, inet_ntoa(addr), dns_time);
-        std::println("");
+        cli::println("");
 
         /* Step 2: TCP 连接 */
-        std::println("  [2/4] TCP 连接...");
+        cli::println("  [2/4] TCP 连接...");
 #ifdef _WIN32
         WSADATA wsa;
         WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
         socket_t sock = socket(AF_INET, SOCK_STREAM, 0);
         if (!ISVALIDSOCKET(sock)) {
-            std::println("        ✗ 创建 socket 失败");
+            cli::println("        �?创建 socket 失败");
             return -1;
         }
 
@@ -148,7 +148,7 @@ static int cmd_network(int argc, char** argv)
 #else
             if (errno != EINPROGRESS) {
 #endif
-                std::println("        ✗ TCP 连接失败");
+                cli::println("        �?TCP 连接失败");
                 CLOSE_SOCKET(sock);
 #ifdef _WIN32
                 WSACleanup();
@@ -163,7 +163,7 @@ static int cmd_network(int argc, char** argv)
             tv.tv_sec = 3;
             tv.tv_usec = 0;
             if (select(static_cast<int>(sock) + 1, nullptr, &fdset, nullptr, &tv) <= 0) {
-                std::println("        ✗ TCP 连接超时 (3s)");
+                cli::println("        �?TCP 连接超时 (3s)");
                 CLOSE_SOCKET(sock);
 #ifdef _WIN32
                 WSACleanup();
@@ -175,43 +175,43 @@ static int cmd_network(int argc, char** argv)
         auto tcp_us = std::chrono::duration_cast<std::chrono::microseconds>(tcp_end - tcp_start).count();
         double tcp_time = tcp_us / 1000.0;
 
-        std::println("        ✓ TCP 连接成功 ({:.1f} ms)", tcp_time);
-        std::println("");
+        cli::println("        �?TCP 连接成功 ({:.1f} ms)", tcp_time);
+        cli::println("");
 
-        /* Step 3: TLS 握手 (可选) */
-        std::println("  [3/4] TLS 握手...");
+        /* Step 3: TLS 握手 (可�? */
+        cli::println("  [3/4] TLS 握手...");
         auto tls_start = std::chrono::steady_clock::now();
 
         void* ssl = nullptr;
         if (tls_client_init(nullptr) != 0) {
-            std::println("        ⚠ TLS 初始化失败: {}", tls_last_error());
-            std::println("        (仅 TCP 连接可用, 无 TLS)");
+            cli::println("        �?TLS 初始化失�? {}", tls_last_error());
+            cli::println("        (�?TCP 连接可用, �?TLS)");
         } else if (tls_client_connect(&ssl, test_host,
                                        static_cast<unsigned short>(test_port)) != 0) {
-            std::println("        ⚠ TLS 握手失败: {}", tls_last_error());
+            cli::println("        �?TLS 握手失败: {}", tls_last_error());
         } else {
             auto tls_end = std::chrono::steady_clock::now();
             auto tls_us = std::chrono::duration_cast<std::chrono::microseconds>(tls_end - tls_start).count();
             double tls_time = tls_us / 1000.0;
 
-            std::println("        ✓ TLS 握手成功 ({:.1f} ms)", tls_time);
+            cli::println("        �?TLS 握手成功 ({:.1f} ms)", tls_time);
 
             char tls_info[2048]{};
             tls_get_info(ssl, tls_info, sizeof(tls_info));
-            std::println("");
-            std::println("        TLS 详情:");
+            cli::println("");
+            cli::println("        TLS 详情:");
             char* line = std::strtok(tls_info, "\n");
             while (line) {
-                std::println("          {}", line);
+                cli::println("          {}", line);
                 line = std::strtok(nullptr, "\n");
             }
 
             tls_close(ssl);
         }
-        std::println("");
+        cli::println("");
 
         /* Step 4: HTTP 请求测试 */
-        std::println("  [4/4] HTTP 请求测试...");
+        cli::println("  [4/4] HTTP 请求测试...");
         /* 临时切换目标 */
         std::string orig_host = cli::g_cli_config.host;
         int orig_port = cli::g_cli_config.port;
@@ -233,22 +233,22 @@ static int cmd_network(int argc, char** argv)
 
         if (http_ret == 0) {
             int http_status = http_get_status(response);
-            std::println("        ✓ HTTP GET /api/health -> {} ({:.1f} ms)",
+            cli::println("        �?HTTP GET /api/health -> {} ({:.1f} ms)",
                          http_status, http_time);
         } else {
-            std::println("        ⚠ HTTP 请求失败: {}", tls_last_error());
+            cli::println("        �?HTTP 请求失败: {}", tls_last_error());
         }
-        std::println("");
+        cli::println("");
 
-        std::println("  ┌─────────────────────────────────────────────────────────┐");
-        std::println("  │ 测试摘要                                                │");
-        std::println("  ├─────────────────────────────────────────────────────────┤");
-        std::println("  │ DNS:     ✓ {:.1f} ms                                    │", dns_time);
-        std::println("  │ TCP:     ✓ {:.1f} ms                                    │", tcp_time);
-        std::println("  │ TLS:     {}                                              │", ssl ? "✓" : "✗");
-        std::println("  │ HTTP:    {}                                              │", http_ret == 0 ? "✓" : "✗");
-        std::println("  └─────────────────────────────────────────────────────────┘");
-        std::println("");
+        cli::println("  ┌─────────────────────────────────────────────────────────�?);
+        cli::println("  �?测试摘要                                                �?);
+        cli::println("  ├─────────────────────────────────────────────────────────�?);
+        cli::println("  �?DNS:     �?{:.1f} ms                                    �?, dns_time);
+        cli::println("  �?TCP:     �?{:.1f} ms                                    �?, tcp_time);
+        cli::println("  �?TLS:     {}                                              �?, ssl ? "�? : "�?);
+        cli::println("  �?HTTP:    {}                                              �?, http_ret == 0 ? "�? : "�?);
+        cli::println("  └─────────────────────────────────────────────────────────�?);
+        cli::println("");
 
         CLOSE_SOCKET(sock);
 #ifdef _WIN32
@@ -257,7 +257,7 @@ static int cmd_network(int argc, char** argv)
         return (http_ret == 0) ? 0 : -1;
 
     } else {
-        std::println(stderr, "未知 network 子命令: {}", subcmd);
+        cli::println(stderr, "未知 network 子命�? {}", subcmd);
         return -1;
     }
 }
@@ -265,7 +265,7 @@ static int cmd_network(int argc, char** argv)
 extern "C" int init_cmd_network(void)
 {
     register_command("network",
-        "网络连通性诊断 (DNS/TCP/TLS/HTTP)",
+        "网络连通性诊�?(DNS/TCP/TLS/HTTP)",
         "network test <host> <port>",
         cmd_network);
     return 0;

@@ -1,16 +1,16 @@
 /**
- * cmd_endpoint.cpp — API 端点测试命令 (C++23 版本)
+ * cmd_endpoint.cpp �?API 端点测试命令 (C++23 版本)
  */
 #include "../devtools_cli.hpp"
 
 #include <cstddef>
 #include <cstdio>
-#include <print>
+#include "print_compat.h
 #include <string>
 #include <string_view>
 
 // ============================================================
-// HTTP 底层函数 — 由 net_http.cpp 通过 extern "C" 提供
+// HTTP 底层函数 �?�?net_http.cpp 通过 extern "C" 提供
 // ============================================================
 extern "C" {
 extern int http_request(const char* method, const char* path,
@@ -28,10 +28,10 @@ constexpr std::size_t BUFFER_SIZE = 65536;
 static int cmd_endpoint(int argc, char** argv)
 {
     if (argc < 1) {
-        std::println(stderr, "用法: endpoint <path> [method] [body]");
-        std::println(stderr, "  path   - API 路径, 如 /api/user/profile?id=1");
-        std::println(stderr, "  method - HTTP 方法 (GET/POST/PUT/DELETE, 默认 GET)");
-        std::println(stderr, "  body   - POST/PUT 请求体 (JSON 字符串)");
+        cli::println(stderr, "用法: endpoint <path> [method] [body]");
+        cli::println(stderr, "  path   - API 路径, �?/api/user/profile?id=1");
+        cli::println(stderr, "  method - HTTP 方法 (GET/POST/PUT/DELETE, 默认 GET)");
+        cli::println(stderr, "  body   - POST/PUT 请求�?(JSON 字符�?");
         return -1;
     }
 
@@ -39,20 +39,20 @@ static int cmd_endpoint(int argc, char** argv)
     const char* method = (argc >= 2) ? argv[1] : "GET";
     const char* body   = (argc >= 3) ? argv[2] : nullptr;
 
-    std::println("[*] {} {}{}{}", method, path,
+    cli::println("[*] {} {}{}{}", method, path,
                  body ? " body: " : "", body ? body : "");
 
     std::string response(BUFFER_SIZE, '\0');
     if (http_request(method, path, body, "application/json",
                      response.data(), response.size()) != 0) {
-        std::println("[-] 请求失败");
+        cli::println("[-] 请求失败");
         return -1;
     }
 
     int status = http_get_status(response.c_str());
     std::string_view resp_body = http_get_body(response.c_str());
 
-    std::println("[*] HTTP {}", status);
+    cli::println("[*] HTTP {}", status);
     if (!resp_body.empty()) {
         cli::print_json(resp_body, 0);
     }
