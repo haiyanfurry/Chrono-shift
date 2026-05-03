@@ -14,8 +14,10 @@
 
 #include "TlsServerContext.h"
 
+#if HTTPS_SUPPORT
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#endif
 
 #include <cstring>
 

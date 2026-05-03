@@ -15,8 +15,9 @@
 #include <stdio.h>
 
 /* ============================================================
- * OpenSSL 头文件
+ * OpenSSL 头文件 (需要 HTTPS_SUPPORT)
  * ============================================================ */
+#if HTTPS_SUPPORT
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable: 4996)
@@ -29,6 +30,7 @@
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+#endif /* HTTPS_SUPPORT */
 
 /* ============================================================
  * 平台相关头文件

@@ -11,9 +11,11 @@
 
 #include <cstring>
 #include <sstream>
-
+#if HTTPS_SUPPORT
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#endif
+
 
 #include "../util/Logger.h"
 

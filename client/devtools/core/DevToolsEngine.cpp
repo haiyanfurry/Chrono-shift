@@ -39,6 +39,12 @@
 #include "util/Logger.h"
 
 /* ============================================================
+ * C linkage 前向声明 — 供 CLI 命令注册使用
+ * ============================================================ */
+
+extern "C" int cmd_help(void);
+
+/* ============================================================
  * 前向声明 — 内部工具函数
  * ============================================================ */
 
@@ -115,7 +121,6 @@ int DevToolsEngine::init(app::AppContext& ctx)
 #endif
 
     /* 注册内置命令 (与 CLI main.c 一致) */
-    extern "C" int cmd_help(void);
     register_command("help", "显示帮助信息", "help", (CommandHandler)cmd_help);
 
     /* 注册所有命令模块 (调用 init_commands() — 声明在 devtools_cli.h 或 init_commands.c) */

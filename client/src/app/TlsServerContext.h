@@ -27,9 +27,9 @@ namespace app {
  * 加载 PEM 格式的证书和私钥，在已 accept 的 socket 上执行 TLS 握手
  *
  * 使用示例:
- * @code
+ * \code
  *   TlsServerContext tls("certs/server.crt", "certs/server.key");
- *   if (!tls.is_valid()) { /* 处理错误 */ }
+ *   if (!tls.is_valid()) { return; }
  *
  *   // 对每个客户端连接:
  *   SSL* ssl = tls.accept(client_fd);
@@ -37,7 +37,7 @@ namespace app {
  *       SSL_write(ssl, response, len);
  *       SSL_free(ssl);
  *   }
- * @endcode
+ * \endcode
  */
 class TlsServerContext {
 public:

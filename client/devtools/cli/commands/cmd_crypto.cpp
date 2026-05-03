@@ -8,7 +8,9 @@
  */
 #include "../devtools_cli.hpp"
 
+#if HTTPS_SUPPORT
 #include <openssl/evp.h>
+#endif
 
 #include <chrono>    // std::chrono::system_clock
 #include <print>     // std::println
@@ -19,6 +21,7 @@
 /* ============================================================
  * crypto 命令 - E2E 加密测试
  * ============================================================ */
+#if HTTPS_SUPPORT
 static int cmd_crypto(int argc, char** argv)
 {
     if (argc < 1) {
@@ -183,6 +186,14 @@ static int cmd_crypto(int argc, char** argv)
         return -1;
     }
 }
+
+#else   /* !HTTPS_SUPPORT */
+static int cmd_crypto(int /*argc*/, char** /*argv*/)
+{
+    std::println(stderr, "[-] crypto 命令需要 OpenSSL 支持 (HTTPS_SUPPORT=0)");
+    return -1;
+}
+#endif  /* HTTPS_SUPPORT */
 
 extern "C" int init_cmd_crypto(void)
 {
