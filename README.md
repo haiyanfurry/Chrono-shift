@@ -1,10 +1,11 @@
-# Chrono-shift (墨竹) — QQ 风格社交平台客户端
+# Chrono-shift (墨竹) — QQ 风格跨平台即时通讯桌面客户端
 
-> 一个轻量级即时通讯与社区平台 — QQ 风格 UI、跨平台、模块化、可扩展
+> 跨平台即时通讯客户端 | AES-256-GCM E2E 加密 | ChronoStream v1 ASM 私有混淆 | AI 多提供商集成 | 插件系统 | DevTools
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
-![Language: C/C99 + Rust + JavaScript](https://img.shields.io/badge/language-C%20%7C%20C%2B%2B%20%7C%20Rust%20%7C%20JavaScript-blue)
+![Language: C++17 + Rust + NASM + JavaScript](https://img.shields.io/badge/language-C%2B%2B%20%7C%20Rust%20%7C%20NASM%20%7C%20JavaScript-blue)
 ![Platform: Windows + Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
+![Version: v2.0.0](https://img.shields.io/badge/version-v2.0.0-green)
 
 ---
 
@@ -14,11 +15,7 @@
 - [技术架构](#技术架构)
 - [功能特性](#功能特性)
 - [快速开始](#快速开始)
-  - [环境要求](#环境要求)
-  - [编译构建](#编译构建)
 - [项目结构](#项目结构)
-- [API 文档](#api-文档)
-- [IPC 协议](#ipc-协议)
 - [CLI 调试工具](#cli-调试工具)
 - [测试](#测试)
 - [安装包制作](#安装包制作)
@@ -29,106 +26,148 @@
 
 ## 项目概述
 
-**Chrono-shift (墨竹)** 是一款使用 C/C++ (客户端外壳) + Web 技术 (UI) + Rust (安全模块) 构建的即时通讯桌面客户端，采用 **QQ 风格用户界面**，支持用户注册登录、消息收发、社区互动、文件传输、模板自定义等功能。
+**Chrono-shift (墨竹)** 是一个纯客户端架构的 QQ 风格即时通讯桌面应用，使用 **C++17** (客户端外壳) + **Web 技术** (QQ 风格 UI) + **Rust** (安全模块) + **NASM** (私有加密) 构建。
 
-**v0.3.0 重构**: 服务端 (`server/`) 已移除，项目聚焦于**桌面客户端**和 **CLI 工具**。
-- 桌面客户端: C++ (WebView2/WebKitGTK) + QQ 风格 Web UI
-- CLI 工具: 纯 C 调试接口 (`debug_cli`) + 压力测试 (`stress_test`)
-- 安全模块: Rust FFI (AES-256-GCM 加密/会话管理/安全存储)
+### 核心能力
 
-### 设计目标
+| 能力 | 说明 |
+|------|------|
+| **即时通讯** | 一对一聊天、消息历史、在线状态 |
+| **E2E 加密** | AES-256-GCM 端到端加密通信 |
+| **ASM 私有混淆** | ChronoStream v1 — 自研 NASM 汇编对称流密码 (512 位密钥) |
+| **AI 集成** | 6 家 AI 提供商 (OpenAI/DeepSeek/xAI/Ollama/Gemini/Custom) |
+| **插件系统** | 基于 manifest.json 的插件扩展框架 |
+| **QQ 风格 UI** | 纯白背景 · #12B7F5 蓝色主色调 · #9EEA6A 绿色气泡 |
+| **开发者工具** | 30+ CLI 命令 + UI 调试面板 |
 
-- **轻量**: 纯 C/C++ 编写，低内存占用
-- **跨平台**: Windows (WebView2) / Linux (WebKitGTK)
-- **安全**: AES-256-GCM E2E 加密 + 会话管理 + 安全本地存储
-- **可扩展**: 模块化设计（网络/安全/存储/UI），IPC 消息接口
-- **QQ 风格**: 默认纯白背景，蓝色主色调，绿色自聊气泡，280px 侧边栏
+### 版本演进
+
+| 版本 | 说明 |
+|------|------|
+| **v2.0.0** (当前) | AI 多提供商 + ASM 混淆 + DevTools + 插件系统 |
+| v1.0.0 | C++ 重构 + OAuth 登录 + QQ 风格 UI 定型 |
+| v0.3.0 | 服务端移除，纯客户端架构 |
+| v0.2.0 | 安全加固 + HTTPS 迁移 + NSIS 安装包 |
+| v0.1.0 | 初始版本 (C99 服务端 + 客户端) |
 
 ---
 
 ## 技术架构
 
 ```
-┌─────────────────────────────────────────────────┐
-│               QQ 风格 Web UI                      │
-│  纯白背景 · #12B7F5 蓝色主色调 · #9EEA6A 绿气泡   │
-│  280px 侧边栏 · 底部导航 · 毛玻璃效果 · 动画      │
-├─────────────────────────────────────────────────┤
-│               IPC Bridge (C ↔ JS)                │
-│  WebSocket 二进制帧, 10 种消息类型 (0x01-0x50)    │
-├─────────────────────────────────────────────────┤
-│            客户端网络层 (C/C++)                    │
-│  TCP/TLS/HTTP/WebSocket 客户端实现                │
-│  自动重连 · 指数退避 · 连接池管理                  │
-├─────────────────────────────────────────────────┤
-│        安全模块 (Rust FFI + C 实现)               │
-│  AES-256-GCM · 会话管理 · 安全存储                 │
-│  令牌管理 · E2E 加密                              │
-├─────────────────────────────────────────────────┤
-│              CLI 工具 (纯 C)                      │
-│  debug_cli — 调试/测试/诊断                       │
-│  stress_test — 压力测试/性能评估                  │
-└─────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                   QQ 风格 Web UI (ui/)                        │
+│   18 JS 模块 · 8 CSS 样式表 · 单页应用 · 主题引擎             │
+│   纯白背景 · #12B7F5 蓝色 · #9EEA6A 绿色气泡 · 280px 侧边栏   │
+├──────────────────────────────────────────────────────────────┤
+│               IPC Bridge (C++ ↔ JS)                          │
+│               10 种消息类型 (0x01-0x50)                       │
+│               WebSocket 二进制帧                              │
+├──────────────────────────────────────────────────────────────┤
+│          客户端应用层 (C++17 - src/app/)                      │
+│  Main.cpp · AppContext · ClientHttpServer                    │
+│  WebViewManager · IpcBridge · TlsServerContext · Updater     │
+├──────────────────────────────────────────────────────────────┤
+│          网络层 (C++17 - src/network/)                        │
+│  TcpConnection · TlsWrapper · HttpConnection                 │
+│  WebSocketClient · NetworkClient (外观模式)                   │
+├──────────────┬───────────────────────────────────────────────┤
+│  安全引擎     │    AI 集成层 (src/ai/)                        │
+│  (src/security)│  OpenAIProvider (OpenAI/DS/xAI/Ollama)      │
+│  CryptoEngine │  GeminiProvider · CustomProvider             │
+│  TokenManager │  AIChatSession · AIProvider 工厂              │
+├──────────────┴───────────────────────────────────────────────┤
+│   Rust 安全模块 (client/security/)           NASM 汇编        │
+│   crypto.rs · session.rs                     obfuscate.asm   │
+│   secure_storage.rs · sanitizer.rs           ChronoStream v1 │
+│   asm_bridge.rs (NASM FFI 桥接)             512-bit 密钥      │
+├──────────────────────────────────────────────────────────────┤
+│   插件系统 (src/plugin/)    │   DevTools (devtools/)          │
+│   PluginManager             │   CLI 30+ 命令                  │
+│   PluginManifest · 接口定义  │   UI 调试面板 · HTTP API       │
+├──────────────────────────────────────────────────────────────┤
+│               CLI 工具 (client/tools/)                        │
+│               debug_cli · stress_test                        │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### 核心组件
 
-| 组件 | 语言 | 说明 |
-|------|------|------|
-| [`client/src/network/`](client/src/network/) | C/C++ | TCP/HTTP/WebSocket/TLS 客户端实现 |
-| [`client/src/app/`](client/src/app/) | C++ | 桌面客户端外壳 (WebView2/WebKitGTK 集成) |
-| [`client/src/security/`](client/src/security/) | C++ | 加密引擎、令牌管理器 |
-| [`client/src/storage/`](client/src/storage/) | C++ | 本地存储、会话管理 |
-| [`client/src/util/`](client/src/util/) | C++ | 工具函数、日志 |
-| [`client/security/`](client/security/) | Rust | AES-256-GCM、安全存储、会话管理 |
-| [`client/src/ai/`](client/src/ai/) | C++ | AI 多提供商集成层（OpenAI/DeepSeek/xAI/Ollama/Gemini） |
-| [`client/ui/js/ai_chat.js`](client/ui/js/ai_chat.js) | JS | AI 聊天前端（PROVIDERS 常量、Gemini API 调用、连接测试） |
-| [`client/ui/css/ai.css`](client/ui/css/ai.css) | CSS | AI 聊天面板样式 |
-| [`client/tools/`](client/tools/) | C | CLI 调试工具 + 压力测试工具 |
+| 组件 | 路径 | 语言 | 行数 | 说明 |
+|------|------|------|------|------|
+| 应用外壳 | [`client/src/app/`](client/src/app/) | C++17 | ~1,200 | Main/AppContext/IPC/WebView/HTTP Server |
+| 网络通信 | [`client/src/network/`](client/src/network/) | C++17 | ~1,500 | TCP/TLS/HTTP/WebSocket 客户端 |
+| 安全引擎 | [`client/src/security/`](client/src/security/) | C++17 | ~300 | CryptoEngine + TokenManager |
+| AI 集成 | [`client/src/ai/`](client/src/ai/) | C++17 | ~1,000 | 6 提供商 + 会话管理 |
+| 插件系统 | [`client/src/plugin/`](client/src/plugin/) | C++17 | ~400 | 管理器 + 清单 + 接口 |
+| 本地存储 | [`client/src/storage/`](client/src/storage/) | C++17 | ~300 | LocalStorage + SessionManager |
+| Rust 安全 | [`client/security/`](client/security/) | Rust | ~500 | AES-256-GCM + ASM FFI |
+| NASM 汇编 | [`client/security/asm/`](client/security/asm/) | NASM | ~200 | ChronoStream v1 算法 |
+| DevTools CLI | [`client/devtools/cli/`](client/devtools/cli/) | C99 | ~2,000 | 30+ 调试命令 |
+| 前端 UI | [`client/ui/`](client/ui/) | HTML+CSS+JS | ~4,000 | QQ 风格界面 |
 
 ---
 
 ## 功能特性
 
-### AI 集成
+### 🔐 安全特性
+
+| 类别 | 措施 | 实现位置 |
+|------|------|---------|
+| **传输加密** | TLS 1.3 | [`TlsWrapper.cpp`](client/src/network/TlsWrapper.cpp) — OpenSSL |
+| **E2E 加密** | AES-256-GCM 端到端加密 | [`crypto.rs`](client/security/src/crypto.rs) — Rust FFI |
+| **私有混淆** | ChronoStream v1 (3-pass Fisher-Yates KSA + 8 级级联状态) | [`obfuscate.asm`](client/security/asm/obfuscate.asm) — NASM x64 |
+| **安全存储** | AES-256-GCM 加密本地存储 | [`secure_storage.rs`](client/security/src/secure_storage.rs) — Rust FFI |
+| **会话管理** | 令牌保存/验证/清除 | [`session.rs`](client/security/src/session.rs) — Rust FFI |
+
+### 🤖 AI 集成
 
 | 功能 | 说明 | 支持提供商 |
 |------|------|-----------|
-| **AI 聊天** | 在聊天面板中与 AI 对话 | ✅ OpenAI / DeepSeek / xAI / Ollama / Gemini / 自定义 |
-| **智能回复** | 根据收到的消息生成回复建议 | ✅ OpenAI / DeepSeek / xAI / Ollama / Gemini / 自定义 |
-| **连接测试** | 验证 API 配置是否有效 | ✅ 所有提供商 |
-| **预设自动填充** | 选择提供商后自动填入端点、模型等默认值 | ✅ 6 种预设 |
+| **AI 聊天** | 在聊天面板中与 AI 对话 | ✅ 全部 6 家 |
+| **智能回复** | 根据消息生成回复建议 | ✅ 全部 6 家 |
+| **连接测试** | 验证 API 配置是否有效 | ✅ 全部 6 家 |
+| **预设自动填充** | 选择提供商后自动填入端点/模型 | ✅ 6 种预设 |
 | **无 Key 模式** | Ollama 本地运行无需 API Key | ✅ Ollama |
 
-**AI 配置文件：**
-- C++ 后端: [`client/src/ai/`](client/src/ai/) — 枚举定义、工厂方法、WinHTTP 实现
-- 前端: [`ai_chat.js`](client/ui/js/ai_chat.js) — 路由分发、Gemini 格式转换
-- 文档: [`docs/AI_INTEGRATION.md`](docs/AI_INTEGRATION.md) — 完整集成指南
+**AI 提供商详情:**
 
-### CLI 调试工具
+| 提供商 | 实现类 | API 端点 | 认证 |
+|--------|--------|---------|------|
+| OpenAI | [`OpenAIProvider`](client/src/ai/OpenAIProvider.cpp) | `api.openai.com` | API Key |
+| DeepSeek | 复用 OpenAIProvider | `api.deepseek.com` | API Key |
+| xAI | 复用 OpenAIProvider | `api.x.ai` | API Key |
+| Ollama | 复用 OpenAIProvider | `localhost:11434` | 无 |
+| Gemini | [`GeminiProvider`](client/src/ai/GeminiProvider.cpp) | `generativelanguage.googleapis.com` | API Key |
+| Custom | [`CustomProvider`](client/src/ai/CustomProvider.cpp) | 用户指定 | 自定义 |
 
-| 命令 | 子命令 | 说明 |
-|------|--------|------|
-| `session` | `show/login/logout` | 会话管理 |
-| `config` | `show/set` | 客户端配置 |
-| `storage` | `list/get` | 安全本地存储 |
-| `crypto` | `test` | AES-256-GCM 加密测试 |
-| `network` | `test <host> <port>` | 网络连通性诊断 (DNS/TCP/TLS/HTTP) |
-| `ipc` | `types/send/capture` | IPC 消息类型/发送/捕获 |
-| `ws` | `connect/send/recv/close/status/monitor` | WebSocket 调试 |
-| `health` | — | 服务器健康检查 |
-| `ping` | `[count]` | 服务器延迟测试 |
-| `watch` | `[interval] [rounds]` | 实时监控 |
+### 🧩 插件系统
 
-### 安全特性
-
-| 类别 | 措施 | 实现 |
+| 组件 | 文件 | 说明 |
 |------|------|------|
-| **传输加密** | TLS 1.3 (客户端连接) | [`tls_client.c`](client/src/network/tls_client.c) — OpenSSL |
-| **E2E 加密** | AES-256-GCM 端到端加密 | [`client/security/src/crypto.rs`](client/security/src/crypto.rs) — Rust FFI |
-| **安全存储** | AES-256-GCM 加密本地存储 | [`client/security/src/secure_storage.rs`](client/security/src/secure_storage.rs) — Rust FFI |
-| **会话管理** | 令牌保存/验证/清除 | [`client/security/src/session.rs`](client/security/src/session.rs) — Rust FFI |
-| **自动重连** | 断线自动恢复，指数退避 | [`network.c`](client/src/network.c) |
+| 插件管理器 | [`PluginManager.cpp`](client/src/plugin/PluginManager.cpp) | 加载/卸载/枚举 |
+| 插件清单 | [`PluginManifest.cpp`](client/src/plugin/PluginManifest.cpp) | `manifest.json` 解析 |
+| 插件接口 | [`PluginInterface.h`](client/src/plugin/PluginInterface.h) | 标准 API |
+| 示例插件 | [`example_plugin/`](client/plugins/example_plugin/) | 最小示例 |
+
+### 🛠 CLI 调试工具
+
+参见下方 [CLI 调试工具](#cli-调试工具) 章节。
+
+### 🔒 ChronoStream v1 ASM 私有混淆
+
+| 特性 | 值 |
+|------|-----|
+| 算法类型 | 自研对称流密码 |
+| 密钥长度 | 512 位 (64 字节) |
+| 实现语言 | NASM x64 (Win64 COFF) |
+| KSA 算法 | 3-pass Fisher-Yates shuffle |
+| 状态大小 | 8 字节级联状态 |
+| 密钥流生成 | S-box swap + 级联更新 |
+| 集成方式 | Rust build.rs → NASM → Rust FFI → C++ |
+| 测试状态 | ✅ 4/4 cargo test 通过 |
+
+详见 [`docs/ASM_OBFUSCATION.md`](docs/ASM_OBFUSCATION.md)。
 
 ---
 
@@ -140,35 +179,36 @@
 
 | 平台 | 编译器 | 依赖 |
 |------|--------|------|
-| **Linux** | GCC ≥ 4.8, G++ ≥ 8 | `libssl-dev`, `libwebkit2gtk-4.1-dev` |
-| **Windows** | MinGW-w64 GCC | WinSock2 (`-lws2_32`), OpenSSL DLL |
+| **Linux** | GCC ≥ 8, G++ ≥ 8 | `libssl-dev`, `libwebkit2gtk-4.1-dev`, `nasm` |
+| **Windows** | MinGW-w64 GCC | WinSock2 (`-lws2_32`), OpenSSL DLL, `nasm` |
+
+**必需依赖**
+- **OpenSSL** (≥ 1.1.0): TLS 加密传输
+- **NASM** (≥ 2.15): ASM 混淆模块编译
 
 **可选依赖**
-- **OpenSSL** (≥ 1.1.0): **必需依赖** (TLS 加密传输)
-- **Rust** (≥ 1.70): 编译安全模块 (AES-256-GCM)
+- **Rust** (≥ 1.70): 编译安全模块 (AES-256-GCM + ASM 桥接)
+- **CMake** (≥ 3.20): 客户端主程序构建
 - **NSIS** (≥ 3.0): 制作 Windows 安装包
 
 ### 编译构建
 
-**1. CLI 工具**
-
-```bash
-# Linux
-cd client/tools
-gcc -std=c99 -Wall -I../include debug_cli.c -o debug_cli -lssl -lcrypto -lm
-gcc -std=c99 -Wall -I../include stress_test.c -o stress_test -lm
-
-# Windows (MinGW)
-cd client/tools
-gcc -std=c99 -Wall -I../include debug_cli.c -o debug_cli.exe -lws2_32 -lssl -lcrypto
-gcc -std=c99 -Wall -I../include stress_test.c -o stress_test.exe -lws2_32 -lm
-```
-
-**2. 安全模块 (可选，需安装 Rust)**
+**1. Rust 安全模块 (含 ASM 编译)**
 
 ```bash
 cd client/security
 cargo build --release
+# 输出: target/release/chrono_client_security.a/.dll
+# 此步骤会自动编译 NASM → COFF → 链接到 Rust 静态库
+```
+
+**2. DevTools CLI**
+
+```bash
+# Windows (MinGW)
+cd client/devtools/cli
+mingw32-make
+# 输出: out/chrono-devtools.exe
 ```
 
 **3. 桌面客户端**
@@ -188,230 +228,148 @@ cmake --build build
 
 ```
 Chrono-shift/
-├── client/                       # 桌面客户端 + CLI 工具
-│   ├── include/                  # 头文件
-│   │   ├── tls_client.h          # TLS 客户端 API
-│   │   ├── platform_compat.h     # 跨平台兼容
-│   │   ├── json_parser.h         # JSON 解析器
-│   │   ├── protocol.h            # 通信协议
-│   │   ├── client.h              # 客户端主接口
-│   │   └── ...
-│   ├── src/                      # C/C++ 源码
-│   │   ├── network/              # 网络通信 (TCP/TLS/HTTP/WS)
-│   │   │   ├── tls_client.c      # TLS 客户端 (OpenSSL)
-│   │   │   ├── TlsWrapper.cpp    # C++ TLS 包装
-│   │   │   ├── TcpConnection.cpp # TCP 连接
-│   │   │   ├── HttpConnection.cpp# HTTP 请求
-│   │   │   ├── WebSocketClient.cpp # WebSocket 客户端
-│   │   │   └── NetworkClient.cpp # 网络客户端管理器
-│   │   ├── security/             # 安全引擎
-│   │   │   ├── CryptoEngine.cpp  # 加密引擎
-│   │   │   └── TokenManager.cpp  # 令牌管理
-│   │   ├── storage/              # 本地存储
-│   │   │   ├── LocalStorage.cpp  # 本地持久化
-│   │   │   └── SessionManager.cpp# 会话管理
-│   │   ├── app/                  # 应用外壳
-│   │   │   ├── Main.cpp          # 入口
-│   │   │   ├── WebViewManager.cpp# WebView2/WebKitGTK
-│   │   │   ├── IpcBridge.cpp     # IPC 桥接
-│   │   │   └── ClientHttpServer.cpp # 客户端 HTTP 服务
-│   │   ├── util/                 # 工具
-│   │   │   ├── Logger.cpp        # 日志
-│   │   │   └── Utils.cpp         # 通用工具
-│   │   └── ai/                   # AI 集成层（6 提供商）
-│   │       ├── AIConfig.h/cpp    # 配置枚举 + ProviderPreset 预设
-│   │       ├── AIProvider.h/cpp  # 抽象基类 + 工厂方法
-│   │       ├── OpenAIProvider.h/cpp  # OpenAI 兼容协议（OpenAI/DS/xAI/Ollama 共用）
-│   │       ├── GeminiProvider.h/cpp  # Google Gemini 专用实现
-│   │       ├── CustomProvider.h/cpp  # 自定义 API 实现
-│   │       └── AIChatSession.h/cpp   # AI 对话会话管理
-│   ├── tools/                    # CLI 工具
-│   │   ├── debug_cli.c           # CLI 调试接口
-│   │   ├── stress_test.c         # 压力测试框架
-│   │   └── Makefile              # CLI 工具构建
-│   ├── ui/                       # 前端 UI
-│   │   ├── index.html            # 主页面
-│   │   ├── css/                  # 样式表 (7 个文件)
-│   │   ├── js/                   # JavaScript (12 个)
-│   │   │   ├── ai_chat.js        # AI 聊天模块（PROVIDERS + 路由）
-│   │   │   └── ai_smart_reply.js # AI 智能回复
-│   │   └── assets/               # 静态资源
-│   ├── security/                 # Rust 安全模块
-│   │   └── src/
-│   │       ├── lib.rs            # FFI 接口
-│   │       ├── crypto.rs         # AES-256-GCM 加密
-│   │       ├── session.rs        # 会话管理
-│   │       └── secure_storage.rs # 安全存储
-│   └── CMakeLists.txt
-├── tests/                        # 测试脚本
-│   ├── security_pen_test.sh      # 安全渗透
-│   ├── api_verification_test.sh  # API 验证
-│   └── loopback_test.sh          # 端到端测试
-├── installer/                    # 安装包脚本
-│   └── client_installer.nsi      # 客户端安装器
-├── docs/                         # 文档
-│   ├── API.md                    # API 接口文档
-│   ├── PROTOCOL.md               # 通信协议文档
-│   ├── BUILD.md                  # 构建指南
-│   ├── HTTPS_MIGRATION.md        # HTTPS 迁移指南
-│   └── AI_INTEGRATION.md         # AI 集成文档（6 提供商配置指南）
-├── plans/                        # 设计规划
-├── reports/                      # 测试报告
-├── cleanup.bat                   # Windows 清理脚本
-├── cleanup.sh                    # Linux 清理脚本
-└── README.md                     # 本文件
+├── client/                              # 桌面客户端
+│   ├── include/                         # C 头文件 (10 个)
+│   ├── src/                             # C++17 源码
+│   │   ├── app/                         # 应用外壳 (12 文件)
+│   │   ├── network/                     # 网络通信 (8 文件)
+│   │   ├── security/                    # 安全引擎 (4 文件)
+│   │   ├── storage/                     # 本地存储 (4 文件)
+│   │   ├── util/                        # 工具 (4 文件)
+│   │   ├── ai/                          # AI 集成 (12 文件)
+│   │   └── plugin/                      # 插件系统 (8 文件)
+│   ├── security/                        # Rust 安全模块
+│   │   ├── asm/                         # NASM 汇编 (obfuscate.asm)
+│   │   ├── src/                         # Rust 源码 (6 文件)
+│   │   └── include/                     # C FFI 头文件
+│   ├── devtools/                        # 开发者工具
+│   │   ├── cli/commands/                # 30+ CLI 命令
+│   │   ├── core/                        # C++ 引擎
+│   │   └── ui/                          # 调试面板
+│   ├── tools/                           # 遗留 CLI 工具
+│   ├── ui/                              # 前端 UI
+│   │   ├── js/                          # 18 JS 模块
+│   │   ├── css/                         # 8 样式表
+│   │   └── assets/                      # 资源文件
+│   └── plugins/                         # 插件示例
+├── tests/                               # 测试脚本 (4 个)
+├── installer/                           # NSIS 安装脚本
+├── docs/                                # 文档
+│   ├── BUILD.md                         # 构建指南
+│   ├── ASM_OBFUSCATION.md               # ChronoStream v1 算法
+│   ├── PROJECT_OVERVIEW.md              # 综合项目说明
+│   └── AI_INTEGRATION.md                # AI 集成指南
+├── plans/                               # 规划文档
+│   ├── ARCHITECTURE.md                  # 架构设计
+│   ├── phase_handover.md                # 项目交接
+│   └── phase_*.md                       # 各阶段计划
+├── reports/                             # 测试报告
+│   ├── SUMMARY.md                       # 综合测试报告
+│   └── asm_obfuscation_results.md       # ASM 测试报告
+├── CMakeLists.txt / Makefile            # 构建配置
+└── README.md                            # 本文件
 ```
-
----
-
-## API 文档
-
-完整 API 文档请参见 [`docs/API.md`](docs/API.md)。
-
-### API 端点
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/user/register` | 用户注册 |
-| POST | `/api/user/login` | 用户登录 |
-| GET | `/api/user/profile?user_id=X` | 获取用户信息 |
-| PUT | `/api/user/update` | 更新用户资料 |
-| GET | `/api/user/search?keyword=X` | 搜索用户 |
-| GET | `/api/user/friends` | 好友列表 |
-| POST | `/api/user/friends/add` | 添加好友 |
-| POST | `/api/message/send` | 发送消息 |
-| GET | `/api/message/list?user_id=X` | 消息历史 |
-| GET | `/api/templates` | 模板列表 |
-| POST | `/api/templates/upload` | 上传模板 |
-| POST | `/api/templates/download` | 下载模板 |
-| POST | `/api/templates/apply` | 应用模板 |
-| POST | `/api/file/upload` | 上传文件 |
-| GET | `/api/file/*` | 静态文件/下载 |
-| POST | `/api/avatar/upload` | 上传头像 |
-
----
-
-## IPC 协议
-
-IPC (进程间通信) 基于 WebSocket + 二进制消息帧，支持 **10 种消息类型**：
-
-| 类型码 | 名称 | 说明 | 方向 |
-|--------|------|------|------|
-| `0x01` | `LOGIN` | 用户登录 | JS → C |
-| `0x02` | `LOGOUT` | 用户登出 | JS → C |
-| `0x03` | `MESSAGE` | 消息发送 | 双向 |
-| `0x04` | `MESSAGE_ACK` | 消息确认 | C → JS |
-| `0x05` | `SYSTEM_NOTIFY` | 系统通知 | C → JS |
-| `0x06` | `HEARTBEAT` | 心跳检测 | 双向 |
-| `0x07` | `FILE_TRANSFER` | 文件传输 | 双向 |
-| `0x08` | `FRIEND_REQUEST` | 好友请求 | 双向 |
-| `0x09` | `FRIEND_RESPONSE` | 好友响应 | 双向 |
-| `0x50` | `OPEN_URL` | 打开外部链接 | JS → C |
-
-**协议文件**: [`ipc_bridge.h`](client/include/ipc_bridge.h) (C 定义) + [`ipc.js`](client/ui/js/ipc.js) (JS 实现)
-
-详见 [`docs/PROTOCOL.md`](docs/PROTOCOL.md)。
 
 ---
 
 ## CLI 调试工具
 
-[`debug_cli`](client/tools/debug_cli.c) 是一个强大的 CLI 调试接口，支持以下命令：
+### DevTools CLI (推荐)
 
-| 命令 | 子命令 | 说明 |
-|------|--------|------|
-| `help` | — | 显示所有可用命令 |
-| `session` | `show/login/logout` | 会话管理 |
-| `config` | `show/set <key> <value>` | 配置管理 |
-| `storage` | `list/get <key>` | 安全存储 |
-| `crypto` | `test` | AES-256-GCM 加密测试 |
-| `network` | `test <host> <port>` | 网络诊断 |
-| `ipc` | `types/send/capture` | IPC 消息 |
-| `health` | — | 服务器健康检查 |
-| `endpoint` | `<path> [method] [body]` | 测试 API 端点 |
-| `token` | `<jwt>` | 解码 JWT |
-| `user` | `list/get/create/delete` | 用户管理 |
-| `ws` | `connect/send/recv/close/status/monitor` | WebSocket 调试 |
-| `msg` | `list/get/send` | 消息操作 |
-| `friend` | `list/add` | 好友管理 |
-| `db` | `list <type>` | 数据库内容浏览 |
-| `connect` | `<host> <port> [tls]` | 连接服务器 |
-| `disconnect` | — | 断开连接 |
-| `tls-info` | — | TLS 连接信息 |
-| `json-parse` / `json-pretty` | `<str>` | JSON 工具 |
-| `trace` | `<path>` | 请求追踪 |
-| `ping` | `[count]` | 延迟测试 |
-| `watch` | `[interval] [rounds]` | 实时监控 |
-| `rate-test` | `[n]` | 速率测试 |
-| `verbose` | — | 切换详细模式 |
-| `exit / quit` | — | 退出 |
+位于 [`client/devtools/cli/`](client/devtools/cli/)，30+ 命令，支持交互模式和单命令模式。
 
-### 使用示例
+| 分类 | 命令 | 说明 |
+|------|------|------|
+| **基础功能** | `health`, `endpoint`, `token`, `ipc`, `user` | 服务器通信 |
+| **客户端本地** | `session`, `config`, `storage`, `crypto`, `network` | 本地诊断 |
+| **网络调试** | `ws` (connect/send/recv/close/status/monitor) | WebSocket 调试 |
+| **数据库操作** | `msg`, `friend`, `db` | 数据浏览 |
+| **连接管理** | `connect`, `disconnect` | TCP 连接 |
+| **安全与诊断** | `tls-info`, `gen-cert`, `json-parse`, `json-pretty`, `trace`, **`obfuscate`** | 安全工具 |
+| **性能测试** | `ping`, `watch`, `rate-test` | 性能评估 |
+
+**ASM 混淆命令 (新增):**
+
+```bash
+# 生成 512 位随机密钥
+chrono-devtools obfuscate genkey
+
+# 加密数据 (Base64 输出)
+chrono-devtools obfuscate encrypt --key <hex_key> --data "Hello World"
+
+# 解密数据
+chrono-devtools obfuscate decrypt --key <hex_key> --data <ciphertext_b64>
+
+# 测试
+chrono-devtools obfuscate encrypt --key <hex_key> --data "test" | \
+  chrono-devtools obfuscate decrypt --key <hex_key>
+```
+
+**使用示例:**
 
 ```bash
 # 交互模式
-./client/tools/debug_cli
+client/devtools/cli/out/chrono-devtools.exe
 
 # 单命令模式
-./client/tools/debug_cli health
-./client/tools/debug_cli "config show"
-./client/tools/debug_cli "crypto test"
-./client/tools/debug_cli "network test 127.0.0.1 4443"
-./client/tools/debug_cli "session login 127.0.0.1 <token>"
-./client/tools/debug_cli "ws monitor 5 2"
+client/devtools/cli/out/chrono-devtools.exe health
+client/devtools/cli/out/chrono-devtools.exe "session show"
+client/devtools/cli/out/chrono-devtools.exe "crypto test"
+client/devtools/cli/out/chrono-devtools.exe "obfuscate genkey"
+```
+
+### 遗留 CLI 工具
+
+位于 [`client/tools/`](client/tools/)：
+
+```bash
+# debug_cli — 调试接口
+gcc -std=c99 -Wall -I../include debug_cli.c -o debug_cli -lws2_32 -lssl -lcrypto
+
+# stress_test — 压力测试
+gcc -std=c99 -Wall -I../include stress_test.c -o stress_test -lws2_32 -lm
 ```
 
 ---
 
 ## 测试
 
-### 编译测试
+### Rust 单元测试 (ASM 混淆)
 
 ```bash
-# 编译 CLI 工具
-cd client/tools
-gcc -std=c99 -Wall -I../include debug_cli.c -o debug_cli -lws2_32 -lssl -lcrypto
-
-# 运行 CLI 并测试连接
-./debug_cli health
+cd client/security && cargo test
 ```
 
-### Shell 测试脚本 (需 bash)
+4 个测试用例:
+| 测试 | 说明 |
+|------|------|
+| `test_obfuscate_deobfuscate_roundtrip` | 完整加解密往返 |
+| `test_empty_data` | 空数据处理 |
+| `test_single_obfuscate` | 单字节加密 |
+| `test_different_keys` | 不同密钥输出不同密文 |
+
+### ASM 集成测试
 
 ```bash
-# API 功能验证 (用户/消息/文件/好友/模板 CRUD)
-bash tests/api_verification_test.sh
-
-# 安全渗透测试 (SQL/XSS/路径遍历/JWT/CSRF/SSRF/HTTPS降级)
-bash tests/security_pen_test.sh
-
-# 端到端回环测试 (14 步全链路)
-bash tests/loopback_test.sh
+bash tests/asm_obfuscation_test.sh
 ```
 
-### 测试覆盖
+8 项验证: NASM 编译 / Rust FFI / 加密 / CLI 命令
 
-| 测试脚本 | 覆盖范围 | 测试数 |
-|----------|---------|--------|
-| [`security_pen_test.sh`](tests/security_pen_test.sh) | SQL注入/XSS/路径遍历/JWT伪造/权限绕过/大负载/输入验证/CSRF(5)/SSRF(6)/HTTPS降级(2) | 30+ |
-| [`api_verification_test.sh`](tests/api_verification_test.sh) | 用户系统/消息/文件系统/好友系统/模板CRUD/边界情况 | 20+ |
-| [`loopback_test.sh`](tests/loopback_test.sh) | 全链路 14 步 (注册→登录→资料→消息→文件→模板→好友→CLI) | 14 |
+### Shell 测试脚本 (需服务端)
+
+| 脚本 | 覆盖范围 | 测试数 |
+|------|---------|--------|
+| [`security_pen_test.sh`](tests/security_pen_test.sh) | SQL注入/XSS/路径遍历/JWT/CSRF/SSRF/HTTPS | 30+ |
+| [`api_verification_test.sh`](tests/api_verification_test.sh) | 用户/消息/文件/好友/模板 | 20+ |
+| [`loopback_test.sh`](tests/loopback_test.sh) | 全链路 14 步 | 14 |
 
 ---
 
 ## 安装包制作
 
-本项目提供 NSIS (Nullsoft Scriptable Install System) 安装脚本，位于 [`installer/`](installer/) 目录。
-
-### 准备工作
-
-1. 安装 [NSIS](https://nsis.sourceforge.io/Download) (≥ 3.0)
-2. 编译客户端和所有 CLI 工具
-3. 确保 `makensis` 在 PATH 中
-
-### 制作客户端安装包
-
 ```bash
+# 需要安装 NSIS (≥ 3.0)
 makensis installer/client_installer.nsi
 # 输出: installer/Chrono-shift-Client-Setup.exe
 ```
