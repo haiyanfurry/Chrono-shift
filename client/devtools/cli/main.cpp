@@ -55,7 +55,7 @@ extern "C" {
  * 向 C 风格命令表注册，同时同步到 C++ CommandRegistry
  */
 extern "C" void register_command(const char* name, const char* desc,
-                                  const char* usage, CommandHandlerC handler)
+                                  const char* usage, CommandHandler handler)
 {
     // C 兼容表
     if (g_command_count >= MAX_COMMANDS) {
@@ -86,7 +86,7 @@ extern "C" void register_command(const char* name, const char* desc,
         });
 }
 
-extern "C" CommandHandlerC find_command(const char* name)
+extern "C" CommandHandler find_command(const char* name)
 {
     for (int i = 0; i < g_command_count; i++) {
         if (std::strcmp(g_command_table[i].name, name) == 0) {
