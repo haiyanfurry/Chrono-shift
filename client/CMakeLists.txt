@@ -133,23 +133,23 @@ if(WIN32)
 endif()
 
 # ============================================================
-# 独立工具: stress-test (压力测试)
+# 独立工具: stress-test (压力测试) — TODO: 需要添加 tls_client.c 和终端运行时支持
 # ============================================================
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/stress_test.cpp")
-    add_executable(stress-test
-        tools/stress_test.cpp
-    )
-    target_include_directories(stress-test PRIVATE
-        include
-        src
-    )
-    target_link_libraries(stress-test PRIVATE
-        ws2_32
-    )
-    if(OpenSSL_FOUND)
-        target_link_libraries(stress-test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-    endif()
-endif()
+# if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/stress_test.cpp")
+#     add_executable(stress-test
+#         tools/stress_test.cpp
+#     )
+#     target_include_directories(stress-test PRIVATE
+#         include
+#         src
+#     )
+#     target_link_libraries(stress-test PRIVATE
+#         ws2_32
+#     )
+#     if(OpenSSL_FOUND)
+#         target_link_libraries(stress-test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+#     endif()
+# endif()
 
 # ============================================================
 # 自定义目标: 生成自签名开发证书
