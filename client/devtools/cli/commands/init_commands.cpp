@@ -52,6 +52,10 @@ extern int init_cmd_ping(void);
 extern int init_cmd_watch(void);
 extern int init_cmd_rate_test(void);
 
+/* I2P + 社交 (C++23) */
+extern int init_cmd_i2p(void);
+extern int init_cmd_social(void);
+
 } // extern "C"
 
 // ============================================================
@@ -64,7 +68,7 @@ void init_commands(void)
     init_cmd_endpoint();
     init_cmd_token();
     init_cmd_ipc();
-    init_cmd_user();
+    /* init_cmd_user(); — 替换为 cmd_social.cpp 的 "uid" 命令 */
 
     /* 客户端本地命令 */
     init_cmd_session();
@@ -77,8 +81,8 @@ void init_commands(void)
     init_cmd_ws();
 
     /* 数据库操作 */
-    init_cmd_msg();
-    init_cmd_friend();
+    /* init_cmd_msg(); — 替换为 cmd_social.cpp 的 "msg" 命令 */
+    /* init_cmd_friend(); — 替换为 cmd_social.cpp 的 "friend" 命令 */
     init_cmd_db();
 
     /* 连接管理 */
@@ -97,4 +101,8 @@ void init_commands(void)
     init_cmd_ping();
     init_cmd_watch();
     init_cmd_rate_test();
+
+    /* I2P + 社交 */
+    init_cmd_i2p();
+    init_cmd_social();
 }

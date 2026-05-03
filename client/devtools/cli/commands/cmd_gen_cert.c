@@ -137,6 +137,14 @@ static int cmd_gen_cert(int argc, char** argv)
     if (argc > 3) days       = atoi(argv[3]);
     if (days <= 0) days = DEFAULT_DAYS;
 
+    /* 验证 CN 仅含安全字符, 防止命令注入 */
+    for (const char* p = cn; *p; p++) {
+        if (!isalnum((unsigned char)*p) && *p != '.' && *p != '-' && *p != '*') {
+            fprintf(stderr, "[-] 无效 Common Name: 仅允许字母数字 . - *\n");
+            return -1;
+        }
+    }
+
     printf(COLOR_BOLD "=== 快速自签名证书生成 ===\n" COLOR_RESET);
     printf("  输出目录: %s\n", output_dir);
     printf("  Common Name: %s\n", cn);

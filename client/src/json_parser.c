@@ -60,7 +60,7 @@ char* json_escape_string(const char* input)
 {
     if (!input) return NULL;
     size_t len = strlen(input);
-    size_t cap = len * 2 + 3;
+    size_t cap = len * 6 + 3;  // worst case: every char is <0x20 -> 6 bytes each
     char* out = (char*)malloc(cap);
     if (!out) return NULL;
     char* p = out;
@@ -129,11 +129,13 @@ static char* parse_string_raw(Parser* p)
                 unsigned cp = 0;
                 for (int i = 0; i < 4; i++) {
                     p->pos++;
+                    if (!p->s[p->pos]) { free(out); return NULL; }
                     char h = p->s[p->pos];
                     cp <<= 4;
                     if (h >= '0' && h <= '9') cp |= (h - '0');
                     else if (h >= 'a' && h <= 'f') cp |= (h - 'a' + 10);
                     else if (h >= 'A' && h <= 'F') cp |= (h - 'A' + 10);
+                    else { free(out); return NULL; }
                 }
                 if (len + 4 >= cap) {
                     cap *= 2;

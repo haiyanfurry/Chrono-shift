@@ -28,8 +28,10 @@ static int cmd_session(int argc, char** argv)
         printf("  登录状态: %s\n", g_config.session_logged_in ? "已登录 ✓" : "未登录 ✗");
         if (g_config.session_logged_in) {
             printf("  服务器:   %s\n", g_config.session_host);
-            printf("  令牌:     %s\n", g_config.session_token);
-            printf("  令牌长度: %zu 字符\n", strlen(g_config.session_token));
+            /* 令牌脱敏显示: 仅显示前8字符 */
+            size_t tok_len = strlen(g_config.session_token);
+            printf("  令牌:     %.8s...\n", g_config.session_token);
+            printf("  令牌长度: %zu 字符\n", tok_len);
         }
         printf("\n");
         printf("  提示: session login <host> <token> 来登录\n");

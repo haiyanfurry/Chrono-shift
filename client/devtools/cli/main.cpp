@@ -21,6 +21,8 @@
 #include "print_compat.h"
 #include <string>
 #include <string_view>
+
+#include "social/SocialManager.h"
 #include <vector>
 
 // ============================================================
@@ -78,10 +80,11 @@ extern "C" void register_command(const char* name, const char* desc,
     g_command_registry.add(
         name, desc, usage,
         [handler](cli::Args args) -> int {
-            // �?C++ span<string_view> 转换�?C argc/argv
+            // 跳过命令名 (args[0]), 与旧 main.c 的 handler(argc-1, argv+1) 一致
+            auto cmd_args = args.size() > 1 ? args.subspan(1) : cli::Args{};
             std::vector<char*> argv_ptrs;
             std::vector<std::string> storage;
-            for (auto& s : args) {
+            for (auto& s : cmd_args) {
                 storage.push_back(std::string(s));
             }
             for (auto& s : storage) {
@@ -354,7 +357,7 @@ int main(int argc, char** argv)
     g_command_registry.add("help", "显示此帮助信息", "help", cmd_help);
     g_command_registry.add("verbose", "切换详细模式", "verbose", cmd_verbose);
 
-    // 同步�?C 兼容�?(help + verbose)
+    // 同步到 C 兼容层 (help + verbose)
     register_command("help", "显示此帮助信息", "help",
                      [](int, char**) -> int { return cmd_help({}); });
     register_command("verbose", "切换详细模式", "verbose",
@@ -363,6 +366,23 @@ int main(int argc, char** argv)
     // 引入外部命令 (�?cmd_*.c / init_commands.cpp 中注�?
     extern void init_commands(void);
     init_commands();
+
+    // 社交模块: 加载状态, 显示待处理请求
+    {
+        auto& mgr = chrono::client::social::SocialManager::instance();
+        mgr.load_state("./data");
+        mgr.cleanup_expired_blocks();
+        auto pending = mgr.pending_requests();
+        if (!pending.empty()) {
+            cli::println("");
+            cli::println("  [!] 你有 {} 个待处理的好友请求:", pending.size());
+            for (auto& req : pending) {
+                cli::println("      来自: {} — \"{}\" (friend accept/reject {})",
+                             req.from_uid, req.greeting, req.from_uid);
+            }
+            cli::println("");
+        }
+    }
 
     // 脚本模式: 直接执行传入的参�?
     if (argc > 1) {
@@ -380,8 +400,8 @@ int main(int argc, char** argv)
     }
 
     // REPL 交互模式
-    cli::println("Chrono-shift 开发者模�?CLI (C++23)");
-    cli::println("输入 'help' 查看命令, 'exit' 退出\n");
+    cli::println("Chrono-shift 开发者模式 CLI (C++23)");
+    cli::println("输入 help 查看命令, exit 退出\n");
 
     std::string line;
     while (true) {

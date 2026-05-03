@@ -21,6 +21,10 @@ enum MessageType {
     MSG_TYPE_READ_RECEIPT = 0x21,
     MSG_TYPE_FRIEND_REQ   = 0x30,
     MSG_TYPE_FRIEND_RESP  = 0x31,
+    MSG_TYPE_HANDSHAKE_REQ   = 0x40,  /* I2P 好友请求 */
+    MSG_TYPE_HANDSHAKE_ACCEPT = 0x41,  /* 接受好友请求 */
+    MSG_TYPE_HANDSHAKE_REJECT = 0x42,  /* 拒绝 (30分钟屏蔽) */
+    MSG_TYPE_I2P_IDENTIFY     = 0x43,  /* 交换 I2P 地址 */
     MSG_TYPE_SYSTEM       = 0xFF
 };
 

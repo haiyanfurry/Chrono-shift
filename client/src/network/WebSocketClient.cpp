@@ -287,6 +287,7 @@ int WebSocketClient::recv_frame(WsFrame& frame)
 
     frame.payload.clear();
 
+    while (true) {
     /* --- 读取 Byte 0 (FIN + RSV + Opcode) --- */
     uint8_t byte0;
     if (tcp_->recv_all(&byte0, 1) != 0) {
@@ -307,12 +308,10 @@ int WebSocketClient::recv_frame(WsFrame& frame)
         /* 回复 Pong */
         uint8_t pong[] = { 0x8A, 0x00 };
         tcp_->send_all(pong, 2);
-        return recv_frame(frame); /* 递归读取下一帧 */
+        continue; /* 继续读取下一帧 (循环而非递归) */
     } else if (opcode_val == 0xA) { /* Pong */
         /* 忽略 Pong，继续读取 */
-        uint8_t ignore_hdr;
-        tcp_->recv_all(&ignore_hdr, 1);
-        return recv_frame(frame);
+        continue;
     }
 
     /* --- 读取 Byte 1 (Mask + Payload Length) --- */
@@ -368,6 +367,7 @@ int WebSocketClient::recv_frame(WsFrame& frame)
     frame.opcode = static_cast<WsOpcode>(opcode_val);
     frame.mask   = masked;
     return 0;
+    } // end while loop for control frame skipping
 }
 
 } // namespace network

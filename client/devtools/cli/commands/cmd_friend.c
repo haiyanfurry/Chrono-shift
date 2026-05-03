@@ -5,6 +5,21 @@
 #include "../devtools_cli.h"
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
+
+/* 简易 JSON 字符串转义 */
+static void escape_json_str(char* dst, const char* src, size_t dst_size)
+{
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j < dst_size - 1; i++) {
+        if (src[i] == '"' || src[i] == '\\') {
+            if (j < dst_size - 2) { dst[j++] = '\\'; dst[j++] = src[i]; }
+        } else {
+            dst[j++] = src[i];
+        }
+    }
+    dst[j] = '\0';
+}
 
 extern int http_request(const char* method, const char* path,
                         const char* body, const char* content_type,
@@ -51,10 +66,13 @@ static int cmd_friend(int argc, char** argv)
 
     } else if (strcmp(subcmd, "add") == 0) {
         if (argc < 3) { fprintf(stderr, "用法: friend add <user_id1> <user_id2>\n"); return -1; }
+        char safe_id1[128], safe_id2[128];
+        escape_json_str(safe_id1, argv[1], sizeof(safe_id1));
+        escape_json_str(safe_id2, argv[2], sizeof(safe_id2));
         char body[512];
         snprintf(body, sizeof(body),
-            "{\"user_id1\":%s,\"user_id2\":%s}", argv[1], argv[2]);
-        printf("[*] 添加好友: %s <-> %s\n", argv[1], argv[2]);
+            "{\"user_id1\":\"%s\",\"user_id2\":\"%s\"}", safe_id1, safe_id2);
+        printf("[*] 添加好友: %s <-> %s\n", safe_id1, safe_id2);
 
         char response[BUFFER_SIZE] = {0};
         if (http_request("POST", "/api/friends/add", body, "application/json",

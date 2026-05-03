@@ -108,6 +108,7 @@ HttpConnection::Response HttpConnection::request(
         bool recv_ok = true;
 
         while (buf_pos < buffer.size() - 1) {
+            if (buf_pos >= buffer.size()) break;  // safety: prevent unsigned wraparound
             int n_recv;
             if (tcp_.get_ssl()) {
                 n_recv = static_cast<int>(

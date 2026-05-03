@@ -45,16 +45,18 @@ endif()
 # 源文件
 # ============================================================
 
-# === C++ 源文件 (新架构) ===
+# === C++ 源文件 (CLI 架构) ===
+# 注意: src/app/*.cpp (GUI) 和 devtools/core/*.cpp (DevToolsEngine + HTTP/IPC)
+# 已移除，CLI 模式不需要这些 GUI 集成组件
 file(GLOB_RECURSE CLIENT_CPP_SOURCES
     src/util/*.cpp
     src/network/*.cpp
-    src/app/*.cpp
     src/storage/*.cpp
     src/security/*.cpp
     src/ai/*.cpp
     src/plugin/*.cpp
-    devtools/core/*.cpp
+    src/i2p/*.cpp
+    src/social/*.cpp
 )
 
 # === CLI 工具 C++ 源文件 (C++23 迁移) ===
@@ -64,9 +66,11 @@ file(GLOB CLI_CPP_SOURCES
     devtools/cli/net_http.cpp
 )
 
-# === CLI 命令初始化 (C++ 文件) ===
+# === CLI 命令初始化 + 新功能 (C++ 文件) ===
 list(APPEND CLI_CPP_SOURCES
     devtools/cli/commands/init_commands.cpp
+    devtools/cli/commands/cmd_i2p.cpp
+    devtools/cli/commands/cmd_social.cpp
 )
 
 # === C 源文件 (旧架构，过渡期保留) ===
@@ -104,8 +108,7 @@ if(NOT HAS_CPP23_PRINT)
     add_compile_definitions(NO_CPP23_PRINT=1)
 endif()
 
-# 链接 WebView2
-set(WEBVIEW2_LIB "${CMAKE_CURRENT_SOURCE_DIR}/lib/Microsoft.Web.WebView2.Core.dll")
+# 注意: WebView2 和 GUI 组件 (src/app/, devtools/core/) 已移除
 
 if(EXISTS ${RUST_SECURITY_LIB})
     target_compile_definitions(chrono-client PRIVATE RUST_FEATURE_ENABLED)
@@ -137,15 +140,15 @@ if(OpenSSL_FOUND)
     target_link_libraries(chrono-client PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
-# Windows GUI 子系统 (MinGW GCC 使用 -Wl,--subsystem,windows)
+# CLI 控制台子系统 (纯命令行，无 GUI 窗口)
 if(WIN32)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         set_target_properties(chrono-client PROPERTIES
-            LINK_FLAGS "-Wl,--subsystem,windows"
+            LINK_FLAGS "-Wl,--subsystem,console"
         )
     else()
         set_target_properties(chrono-client PROPERTIES
-            LINK_FLAGS "/SUBSYSTEM:WINDOWS"
+            LINK_FLAGS "/SUBSYSTEM:CONSOLE"
         )
     endif()
 endif()

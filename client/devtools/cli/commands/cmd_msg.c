@@ -6,6 +6,20 @@
 #include <stdio.h>
 #include <string.h>
 
+/* 简易 JSON 字符串转义 (就地修改, 调用方负责缓冲区足够大) */
+static void escape_json_str(char* dst, const char* src, size_t dst_size)
+{
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j < dst_size - 1; i++) {
+        if (src[i] == '"' || src[i] == '\\') {
+            if (j < dst_size - 2) { dst[j++] = '\\'; dst[j++] = src[i]; }
+        } else {
+            dst[j++] = src[i];
+        }
+    }
+    dst[j] = '\0';
+}
+
 extern int http_request(const char* method, const char* path,
                         const char* body, const char* content_type,
                         char* response, size_t resp_size);
@@ -67,10 +81,14 @@ static int cmd_msg(int argc, char** argv)
         const char* to_uid = argv[1];
         const char* text = argv[2];
 
+        char safe_to_uid[256], safe_text[1024];
+        escape_json_str(safe_to_uid, to_uid, sizeof(safe_to_uid));
+        escape_json_str(safe_text, text, sizeof(safe_text));
+
         char body[2048];
         snprintf(body, sizeof(body),
-            "{\"to_user_id\":%s,\"content\":\"%s\"}", to_uid, text);
-        printf("[*] 发送消息: to=%s, text=%s\n", to_uid, text);
+            "{\"to_user_id\":\"%s\",\"content\":\"%s\"}", safe_to_uid, safe_text);
+        printf("[*] 发送消息: to=%s, text=%s\n", safe_to_uid, safe_text);
 
         char response[BUFFER_SIZE] = {0};
         if (http_request("POST", "/api/message/send", body, "application/json",
