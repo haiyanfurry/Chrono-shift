@@ -129,6 +129,7 @@ struct Config {
     // WebSocket
     bool ws_connected = false;
     void* ws_ssl = nullptr;
+    int ws_buffer_len = 0;
 
     // 调试
     bool verbose = false;
