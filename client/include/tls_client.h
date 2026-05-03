@@ -4,7 +4,7 @@
 /**
  * Chrono-shift 客户端 TLS 抽象层
  * 基于 OpenSSL 的跨平台 TLS 封装
- * 语言标准: C99
+ * 语言标准: C99 / C++23 (extern "C" 兼容)
  *
  * 为客户端和 CLI 工具提供 TLS 连接能力:
  * 1. 客户端 network/ — 连接 HTTPS 服务端
@@ -14,6 +14,10 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* ============================================================
  * Opaque 类型 (隐藏 OpenSSL 实现细节)
@@ -89,5 +93,9 @@ void tls_get_info(SSL* ssl, char* out_buf, size_t buf_size);
  * 获取最后错误描述 (线程安全)
  */
 const char* tls_last_error(void);
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* CHRONO_TLS_CLIENT_H */
