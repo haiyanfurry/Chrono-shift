@@ -69,17 +69,11 @@ file(GLOB CLIENT_C_SOURCES
     src/network/*.c
 )
 
-# === CLI C 源文件 (过渡期保留，逐步转换至 .cpp) ===
-file(GLOB CLI_C_SOURCES
-    devtools/cli/commands/*.c
-)
-
 # === 最终源文件列表 ===
 set(CLIENT_SOURCES
     ${CLIENT_CPP_SOURCES}
     ${CLI_CPP_SOURCES}
     ${CLIENT_C_SOURCES}
-    ${CLI_C_SOURCES}
 )
 
 add_executable(chrono-client ${CLIENT_SOURCES})
