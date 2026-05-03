@@ -27,10 +27,12 @@
 // C++23 全局实例
 // ============================================================
 namespace cli = chrono::client::cli;
-using namespace cli;
 
 cli::CommandRegistry cli::g_command_registry;
 cli::Config cli::g_cli_config;
+
+using cli::g_command_registry;
+using cli::g_cli_config;
 
 // ============================================================
 // C 兼容层 — 用于现有的 cmd_*.c (C 文件)

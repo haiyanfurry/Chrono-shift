@@ -60,7 +60,6 @@ file(GLOB_RECURSE CLIENT_CPP_SOURCES
 # === CLI 工具 C++ 源文件 (C++23 迁移) ===
 file(GLOB_RECURSE CLI_CPP_SOURCES
     devtools/cli/*.cpp
-    tools/*.cpp
 )
 
 # === C 源文件 (旧架构，过渡期保留) ===
@@ -119,11 +118,36 @@ if(OpenSSL_FOUND)
     target_link_libraries(chrono-client PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
-# Windows GUI 子系统
+# Windows GUI 子系统 (MinGW GCC 使用 -Wl,--subsystem,windows)
 if(WIN32)
-    set_target_properties(chrono-client PROPERTIES
-        LINK_FLAGS "/SUBSYSTEM:WINDOWS"
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        set_target_properties(chrono-client PROPERTIES
+            LINK_FLAGS "-Wl,--subsystem,windows"
+        )
+    else()
+        set_target_properties(chrono-client PROPERTIES
+            LINK_FLAGS "/SUBSYSTEM:WINDOWS"
+        )
+    endif()
+endif()
+
+# ============================================================
+# 独立工具: stress-test (压力测试)
+# ============================================================
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/stress_test.cpp")
+    add_executable(stress-test
+        tools/stress_test.cpp
     )
+    target_include_directories(stress-test PRIVATE
+        include
+        src
+    )
+    target_link_libraries(stress-test PRIVATE
+        ws2_32
+    )
+    if(OpenSSL_FOUND)
+        target_link_libraries(stress-test PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    endif()
 endif()
 
 # ============================================================
