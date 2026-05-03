@@ -115,7 +115,7 @@ int DevToolsEngine::init(app::AppContext& ctx)
 #endif
 
     /* 注册内置命令 (与 CLI main.c 一致) */
-    extern int cmd_help(void);
+    extern "C" int cmd_help(void);
     register_command("help", "显示帮助信息", "help", (CommandHandler)cmd_help);
 
     /* 注册所有命令模块 (调用 init_commands() — 声明在 devtools_cli.h 或 init_commands.c) */
