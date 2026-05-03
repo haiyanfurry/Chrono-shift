@@ -123,9 +123,9 @@ int DevToolsEngine::init(app::AppContext& ctx)
     /* 注册内置命令 (与 CLI main.c 一致) */
     register_command("help", "显示帮助信息", "help", (CommandHandler)cmd_help);
 
-    /* 注册所有命令模块 (调用 init_commands() — 声明在 devtools_cli.h 或 init_commands.c) */
+    /* 注册所有命令模块 (调用 ::init_commands() — 声明在 global 作用域, 见 init_commands.cpp) */
     extern void init_commands(void);
-    init_commands();
+    ::init_commands();
 
     LOG_INFO("DevToolsEngine 初始化完成, 已注册 %d 个命令", g_command_count);
     return 0;

@@ -8,6 +8,12 @@
 #define DEVTOOLS_CLI_H
 
 #include <stdio.h>
+
+/* === C++ 兼容性守卫: 当从 C++ 文件包含此头文件时, 函数声明使用 C 链接 === */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -111,5 +117,9 @@ int base64_decode(const char* in, size_t in_len,
 #define COLOR_BLUE    "\033[34m"
 #define COLOR_CYAN    "\033[36m"
 #define COLOR_BOLD    "\033[1m"
+
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
 
 #endif /* DEVTOOLS_CLI_H */

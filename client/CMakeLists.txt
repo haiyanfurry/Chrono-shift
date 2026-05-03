@@ -111,6 +111,7 @@ target_link_libraries(chrono-client PRIVATE
     shell32
     ole32
     uuid
+    winhttp
 )
 
 # HTTPS 支持 — 需要 OpenSSL
