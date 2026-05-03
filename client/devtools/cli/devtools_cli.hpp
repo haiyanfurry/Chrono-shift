@@ -39,6 +39,19 @@
 #endif
 
 // ============================================================
+// C 兼容函数 — 由 main.cpp 实现, 供 cmd_*.cpp 调用
+// ============================================================
+extern "C" {
+/** 注册一个命令 (同时注册到 C g_command_table[] 和 C++ g_command_registry) */
+void register_command(const char* name, const char* desc,
+                      const char* usage,
+                      int (*handler)(int, char**));
+
+/** 查找已注册的命令 */
+int (*find_command(const char* name))(int, char**);
+}
+
+// ============================================================
 // 命名空间
 // ============================================================
 namespace chrono::client::cli {

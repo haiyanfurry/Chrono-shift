@@ -26,12 +26,10 @@
 // ============================================================
 // C++23 全局实例
 // ============================================================
-namespace chrono::client::cli {
-    CommandRegistry g_command_registry;
-    Config g_cli_config;
-} // namespace chrono::client::cli
+namespace cli = chrono::client::cli;
 
-using namespace chrono::client::cli;
+cli::CommandRegistry cli::g_command_registry;
+cli::Config cli::g_cli_config;
 
 // ============================================================
 // C 兼容层 — 用于现有的 cmd_*.c (C 文件)
@@ -39,6 +37,9 @@ using namespace chrono::client::cli;
 // ============================================================
 
 // 包含 C 头文件以保持类型一致
+// 注意: C 头文件定义了 typedef int (*CommandHandler)(int, char**)
+// 这与 C++23 的 chrono::client::cli::CommandHandler (move_only_function) 冲突
+// 因此在 extern "C" 函数中直接使用 C 函数指针类型
 extern "C" {
     #include "devtools_cli.h"
 }
@@ -53,9 +54,11 @@ extern "C" {
 /**
  * register_command — C 兼容包装
  * 向 C 风格命令表注册，同时同步到 C++ CommandRegistry
+ * 等价于 C 头文件: void register_command(const char*, const char*, const char*, CommandHandler)
  */
 extern "C" void register_command(const char* name, const char* desc,
-                                  const char* usage, CommandHandler handler)
+                                  const char* usage,
+                                  int (*handler)(int, char**))
 {
     // C 兼容表
     if (g_command_count >= MAX_COMMANDS) {
@@ -71,7 +74,7 @@ extern "C" void register_command(const char* name, const char* desc,
     // 同步到 C++ CommandRegistry
     g_command_registry.add(
         name, desc, usage,
-        [handler](Args args) -> int {
+        [handler](cli::Args args) -> int {
             // 将 C++ span<string_view> 转换为 C argc/argv
             std::vector<char*> argv_ptrs;
             std::vector<std::string> storage;
@@ -86,7 +89,7 @@ extern "C" void register_command(const char* name, const char* desc,
         });
 }
 
-extern "C" CommandHandler find_command(const char* name)
+extern "C" int (*find_command(const char* name))(int, char**)
 {
     for (int i = 0; i < g_command_count; i++) {
         if (std::strcmp(g_command_table[i].name, name) == 0) {
@@ -105,7 +108,7 @@ extern "C" void config_init_defaults(void)
     std::strcpy(g_config.storage_path, "./data");
 
     // 同步到 C++ Config
-    g_cli_config = Config{};
+    g_cli_config = cli::Config{};
 
     // 从环境变量读取
     char* env_host = std::getenv("CHRONO_HOST");
@@ -129,7 +132,7 @@ extern "C" void config_init_defaults(void)
 // C++ 工具函数实现
 // ============================================================
 
-std::string chrono::client::cli::timestamp_str()
+std::string cli::timestamp_str()
 {
     auto now = std::chrono::system_clock::now();
     auto tt = std::chrono::system_clock::to_time_t(now);
@@ -137,8 +140,7 @@ std::string chrono::client::cli::timestamp_str()
     return std::format("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec);
 }
 
-void chrono::client::cli::print_colored(std::string_view color,
-                                         std::string_view text)
+void cli::print_colored(std::string_view color, std::string_view text)
 {
 #ifdef _WIN32
     HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -162,11 +164,11 @@ void chrono::client::cli::print_colored(std::string_view color,
     std::print("{}", text);
     SetConsoleTextAttribute(hConsole, attr);
 #else
-    std::print("{}{}{}", color, text, COLOR_RESET);
+    std::print("{}{}{}", color, text, cli::COLOR_RESET);
 #endif
 }
 
-void chrono::client::cli::print_json(std::string_view json, int indent)
+void cli::print_json(std::string_view json, int indent)
 {
     if (json.empty()) {
         std::println("(空)");
@@ -222,7 +224,7 @@ void chrono::client::cli::print_json(std::string_view json, int indent)
     std::println("");
 }
 
-auto chrono::client::cli::base64_decode(std::string_view in)
+auto cli::base64_decode(std::string_view in)
     -> std::expected<std::vector<std::uint8_t>, std::string>
 {
     static constexpr std::uint8_t DECODE_TABLE[256] = {
@@ -269,7 +271,7 @@ auto chrono::client::cli::base64_decode(std::string_view in)
 // ============================================================
 // help 命令 (C++23 版本)
 // ============================================================
-static int cmd_help(Args args)
+static int cmd_help(cli::Args args)
 {
     (void)args;
     std::println("");
@@ -298,7 +300,7 @@ static int cmd_help(Args args)
 // ============================================================
 // verbose 命令 (C++23 版本)
 // ============================================================
-static int cmd_verbose(Args args)
+static int cmd_verbose(cli::Args args)
 {
     (void)args;
     g_cli_config.verbose = !g_cli_config.verbose;

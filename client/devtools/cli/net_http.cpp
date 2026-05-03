@@ -144,6 +144,12 @@ static std::string recv_all(socket_t fd)
 }
 
 // ============================================================
+// parse_response 前向声明 — HttpClient::request() 中使用
+// ============================================================
+static auto parse_response(std::string raw)
+    -> std::expected<HttpClient::Response, std::string>;
+
+// ============================================================
 // extern "C" 兼容层 — 供 cmd_*.c (C 文件) 调用
 // ============================================================
 
