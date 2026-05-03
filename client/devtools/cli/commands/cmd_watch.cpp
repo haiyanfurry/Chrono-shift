@@ -7,7 +7,7 @@
 #include "../devtools_cli.hpp"
 
 #include <chrono>    // std::chrono::steady_clock, std::chrono::milliseconds
-#include "print_compat.h     // std::println
+#include "print_compat.h"     // std::println
 #include <thread>    // std::this_thread::sleep_for
 #include <string>    // std::string
 

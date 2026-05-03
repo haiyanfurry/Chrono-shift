@@ -5,7 +5,7 @@
 
 #include <cstddef>
 #include <cstdio>
-#include "print_compat.h
+#include "print_compat.h"
 #include <string>
 #include <string_view>
 

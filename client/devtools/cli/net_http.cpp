@@ -1,13 +1,13 @@
 /**
- * net_http.cpp �?开发者模�?CLI HTTP 网络�?(C++23 重构�?
+ * net_http.cpp �?开发者模�?CLI HTTP 网络�?(C++23 重构�?
  *
- * 自包含的 HTTP/HTTPS 客户端实�?
- * 支持 TCP 明文�?OpenSSL TLS 加密连接
+ * 自包含的 HTTP/HTTPS 客户端实�?
+ * 支持 TCP 明文�?OpenSSL TLS 加密连接
  *
  * ========== 向后兼容设计 ==========
  * 1) 提供 extern "C" 函数 (http_request / http_get_body / http_get_status)
  *    供现有的 cmd_*.c (C 文件) 调用
- * 2) 提供 C++23 HttpClient RAII 类供�?C++ 代码使用
+ * 2) 提供 C++23 HttpClient RAII 类供�?C++ 代码使用
  * ===================================
  */
 #include "devtools_cli.hpp"
@@ -20,7 +20,7 @@ using namespace cli;
 #include <cstdlib>
 #include <cstring>
 #include <expected>
-#include "print_compat.h
+#include "print_compat.h"
 #include <span>
 #include <string>
 #include <string_view>
@@ -103,7 +103,7 @@ static socket_t tcp_connect(const std::string& host, int port)
     return fd;
 }
 
-/** 发送所有数�?*/
+/** 发送所有数�?*/
 static bool send_all(socket_t fd, std::span<const char> data)
 {
     size_t sent = 0;
@@ -116,7 +116,7 @@ static bool send_all(socket_t fd, std::span<const char> data)
                         data.size() - sent, 0);
 #endif
         if (n <= 0) {
-            cli::println(stderr, "[-] 发送请求失�?);
+            cli::println(stderr, "[-] 发送请求失败");
             return false;
         }
         sent += static_cast<size_t>(n);
@@ -124,7 +124,7 @@ static bool send_all(socket_t fd, std::span<const char> data)
     return true;
 }
 
-/** 接收所有响应数�?*/
+/** 接收所有响应数�?*/
 static std::string recv_all(socket_t fd)
 {
     std::string response;
@@ -147,13 +147,13 @@ static std::string recv_all(socket_t fd)
 }
 
 // ============================================================
-// parse_response 前向声明 �?HttpClient::request() 中使�?
+// parse_response 前向声明 �?HttpClient::request() 中使�?
 // ============================================================
 static auto parse_response(std::string raw)
     -> std::expected<HttpClient::Response, std::string>;
 
 // ============================================================
-// extern "C" 兼容�?�?�?cmd_*.c (C 文件) 调用
+// extern "C" 兼容�?�?�?cmd_*.c (C 文件) 调用
 // ============================================================
 
 extern "C" int http_request(
@@ -164,7 +164,7 @@ extern "C" int http_request(
     char* response,
     size_t resp_size)
 {
-    // 使用 C++23 内部�?request 逻辑
+    // 使用 C++23 内部�?request 逻辑
     auto& cfg = chrono::client::cli::g_cli_config;
     std::string request_buf;
     std::string body_str = body ? body : "";
@@ -195,7 +195,7 @@ extern "C" int http_request(
     }
 
     if (cfg.verbose) {
-        cli::println("[*] 发送请�?\n{}", request_buf);
+        cli::println("[*] 发送请求:\n{}", request_buf);
     }
 
     if (cfg.use_tls) {
@@ -213,14 +213,14 @@ extern "C" int http_request(
             return -1;
         }
 
-        // 发�?
+        // 发�?
         int sent = 0;
         int len = static_cast<int>(request_buf.size());
         while (sent < len) {
             int n = tls_write(ssl, request_buf.data() + sent,
                               static_cast<size_t>(len - sent));
             if (n < 0) {
-                cli::println(stderr, "[-] TLS 发送失�? {}",
+                cli::println(stderr, "[-] TLS 发送失败: {}",
                              tls_last_error());
                 tls_close(ssl);
                 return -1;
@@ -247,7 +247,7 @@ extern "C" int http_request(
         tls_close(ssl);
 
         if (total == 0) {
-            cli::println(stderr, "[-] 未收到响�?);
+            cli::println(stderr, "[-] 未收到响应");
             return -1;
         }
         return 0;
@@ -267,11 +267,11 @@ extern "C" int http_request(
         CLOSE_SOCKET(fd);
 
         if (resp.empty()) {
-            cli::println(stderr, "[-] 未收到响�?);
+            cli::println(stderr, "[-] 未收到响应");
             return -1;
         }
 
-        // 拷贝�?C 风格输出缓冲�?
+        // 拷贝�?C 风格输出缓冲�?
         size_t copy_len = std::min(resp.size(), resp_size - 1);
         std::memcpy(response, resp.data(), copy_len);
         response[copy_len] = '\0';
@@ -299,7 +299,7 @@ extern "C" int http_get_status(const char* response)
 }
 
 // ============================================================
-// HttpClient::request �?C++23 RAII 实现
+// HttpClient::request �?C++23 RAII 实现
 // ============================================================
 
 auto chrono::client::cli::HttpClient::request(
@@ -335,7 +335,7 @@ auto chrono::client::cli::HttpClient::request(
     }
 
     if (config_.verbose) {
-        cli::println("[*] 发送请�?\n{}", request_buf);
+        cli::println("[*] 发送请求:\n{}", request_buf);
     }
 
     if (config_.use_tls) {
@@ -345,7 +345,7 @@ auto chrono::client::cli::HttpClient::request(
                 std::format("TLS 连接失败: {}", tls.last_error()));
         }
 
-        // 发�?
+        // 发�?
         int sent = 0;
         int len = static_cast<int>(request_buf.size());
         while (sent < len) {
@@ -353,7 +353,7 @@ auto chrono::client::cli::HttpClient::request(
                 request_buf.data() + sent, static_cast<size_t>(len - sent)));
             if (n < 0) {
                 return std::unexpected(
-                    std::format("TLS 发送失�? {}", tls.last_error()));
+                    std::format("TLS 发送失败: {}", tls.last_error()));
             }
             sent += n;
         }
@@ -376,7 +376,7 @@ auto chrono::client::cli::HttpClient::request(
         raw.resize(total);
 
         if (raw.empty()) {
-            return std::unexpected("未收到响�?);
+            return std::unexpected("未收到响应");
         }
 
         return parse_response(std::move(raw));
@@ -393,14 +393,14 @@ auto chrono::client::cli::HttpClient::request(
         if (!send_all(fd, std::span<const char>(
                 request_buf.data(), request_buf.size()))) {
             CLOSE_SOCKET(fd);
-            return std::unexpected("发送请求失�?);
+            return std::unexpected("发送请求失败");
         }
 
         std::string raw = recv_all(fd);
         CLOSE_SOCKET(fd);
 
         if (raw.empty()) {
-            return std::unexpected("未收到响�?);
+            return std::unexpected("未收到响应");
         }
 
         return parse_response(std::move(raw));

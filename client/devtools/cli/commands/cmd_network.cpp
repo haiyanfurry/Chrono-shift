@@ -9,7 +9,7 @@
 #include "../devtools_cli.hpp"
 
 #include <chrono>    // std::chrono::steady_clock
-#include "print_compat.h     // std::println
+#include "print_compat.h"     // std::println
 #include <string>    // std::string
 #include <string_view> // std::string_view
 #include <cstdlib>   // std::atoi

@@ -11,7 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include "print_compat.h
+#include "print_compat.h"
 #include <thread>
 
 namespace cli = chrono::client::cli;

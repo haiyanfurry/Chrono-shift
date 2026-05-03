@@ -6,7 +6,7 @@
  */
 #include "../devtools_cli.hpp"
 
-#include "print_compat.h     // std::println
+#include "print_compat.h"     // std::println
 
 namespace cli = chrono::client::cli;
 

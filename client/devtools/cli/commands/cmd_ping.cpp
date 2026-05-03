@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdlib>
-#include "print_compat.h
+#include "print_compat.h"
 #include <string>
 #include <thread>
 

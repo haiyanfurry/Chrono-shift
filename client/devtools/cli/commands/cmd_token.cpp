@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
-#include "print_compat.h
+#include "print_compat.h"
 #include <string>
 #include <string_view>
 #include <vector>

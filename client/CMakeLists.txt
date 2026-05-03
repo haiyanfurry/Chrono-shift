@@ -58,14 +58,22 @@ file(GLOB_RECURSE CLIENT_CPP_SOURCES
 )
 
 # === CLI 工具 C++ 源文件 (C++23 迁移) ===
-file(GLOB_RECURSE CLI_CPP_SOURCES
-    devtools/cli/*.cpp
+# 只包含核心 C++ 文件，命令实现在 .c 文件中 (中文无损坏)
+file(GLOB CLI_CPP_SOURCES
+    devtools/cli/main.cpp
+    devtools/cli/net_http.cpp
+)
+
+# === CLI 命令初始化 (C++ 文件) ===
+list(APPEND CLI_CPP_SOURCES
+    devtools/cli/commands/init_commands.cpp
 )
 
 # === C 源文件 (旧架构，过渡期保留) ===
 file(GLOB CLIENT_C_SOURCES
     src/*.c
     src/network/*.c
+    devtools/cli/commands/*.c
 )
 
 # === 最终源文件列表 ===
@@ -112,7 +120,17 @@ target_link_libraries(chrono-client PRIVATE
     ole32
     uuid
     winhttp
+    ntdll
+    bcrypt
+    userenv
 )
+
+# ASM 混淆函数 (obfuscate.obj)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/security/asm/obfuscate.obj")
+    target_link_libraries(chrono-client PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/security/asm/obfuscate.obj"
+    )
+endif()
 
 # HTTPS 支持 — 需要 OpenSSL
 if(OpenSSL_FOUND)

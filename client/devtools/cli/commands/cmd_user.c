@@ -15,7 +15,7 @@ extern const char* http_get_body(const char* response);
 #define BUFFER_SIZE 65536
 
 /** user list - 列出所有用户 */
-static int cmd_user_list(void)
+int cmd_user_list(void)
 {
     printf("[*] 获取用户列表...\n");
 

@@ -7,7 +7,7 @@
 #include "../devtools_cli.hpp"
 
 #include <chrono>    // std::chrono::steady_clock
-#include "print_compat.h     // std::println
+#include "print_compat.h"     // std::println
 #include <cstdlib>   // std::atoi
 
 namespace cli = chrono::client::cli;

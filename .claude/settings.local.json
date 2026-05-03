@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cmake ..)",
+      "Bash(cmake --build .)",
+      "Bash(xxd -l 500 \"C:/Users/haiyan/Chrono-shift/client/devtools/cli/commands/cmd_config.cpp\")",
+      "Bash(grep -rn '#include \"print_compat\\\\.h$' --include=\"*.cpp\" devtools/)"
+    ]
+  }
+}

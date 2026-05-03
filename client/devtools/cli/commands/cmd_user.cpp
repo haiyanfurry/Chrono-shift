@@ -4,7 +4,7 @@
 #include "../devtools_cli.hpp"
 
 #include <cstddef>
-#include "print_compat.h
+#include "print_compat.h"
 #include <string>
 #include <string_view>
 
