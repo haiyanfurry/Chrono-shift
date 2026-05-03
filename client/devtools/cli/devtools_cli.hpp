@@ -49,6 +49,9 @@ void register_command(const char* name, const char* desc,
 
 /** 查找已注册的命令 */
 int (*find_command(const char* name))(int, char**);
+
+/** JSON 格式化输出 (缩进) — 实现在 main.cpp */
+void print_json(const char* json, int indent);
 }
 
 // ============================================================
@@ -125,6 +128,7 @@ struct Config {
 
     // WebSocket
     bool ws_connected = false;
+    void* ws_ssl = nullptr;
 
     // 调试
     bool verbose = false;
