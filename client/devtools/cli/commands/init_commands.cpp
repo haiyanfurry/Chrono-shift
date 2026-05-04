@@ -52,7 +52,8 @@ extern int init_cmd_ping(void);
 extern int init_cmd_watch(void);
 extern int init_cmd_rate_test(void);
 
-/* I2P + 社交 (C++23) */
+extern int init_cmd_tor(void);
+    extern int init_cmd_i2p(void);
 extern int init_cmd_i2p(void);
 extern int init_cmd_social(void);
 
@@ -102,7 +103,8 @@ void init_commands(void)
     init_cmd_watch();
     init_cmd_rate_test();
 
-    /* I2P + 社交 */
+    /* Tor (默认) + I2P (备选) + 社交 */
+    init_cmd_tor();
     init_cmd_i2p();
     init_cmd_social();
 }

@@ -50,6 +50,7 @@ public:
     // 查询
     const std::string& our_destination() const { return session_.destination; }
     bool is_connected() const { return session_.active; }
+    bool is_local_mode() const { return local_mode_; }
 
 private:
     SamSession session_;

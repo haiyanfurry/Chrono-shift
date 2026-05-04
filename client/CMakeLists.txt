@@ -56,6 +56,7 @@ file(GLOB_RECURSE CLIENT_CPP_SOURCES
     src/ai/*.cpp
     src/plugin/*.cpp
     src/i2p/*.cpp
+    src/tor/*.cpp
     src/social/*.cpp
 )
 
@@ -70,6 +71,7 @@ file(GLOB CLI_CPP_SOURCES
 list(APPEND CLI_CPP_SOURCES
     devtools/cli/commands/init_commands.cpp
     devtools/cli/commands/cmd_i2p.cpp
+    devtools/cli/commands/cmd_tor.cpp
     devtools/cli/commands/cmd_social.cpp
 )
 

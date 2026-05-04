@@ -372,6 +372,11 @@ int main(int argc, char** argv)
         auto& mgr = chrono::client::social::SocialManager::instance();
         mgr.load_state("./data");
         mgr.cleanup_expired_blocks();
+
+        // 尝试自动连接 Tor (默认传输层)
+        extern void try_auto_connect_tor();
+        try_auto_connect_tor();
+
         auto pending = mgr.pending_requests();
         if (!pending.empty()) {
             cli::println("");
