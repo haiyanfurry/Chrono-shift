@@ -53,8 +53,8 @@ extern int init_cmd_watch(void);
 extern int init_cmd_rate_test(void);
 
 extern int init_cmd_tor(void);
-    extern int init_cmd_i2p(void);
 extern int init_cmd_i2p(void);
+extern int init_cmd_bridge(void);
 extern int init_cmd_social(void);
 
 } // extern "C"
@@ -103,8 +103,9 @@ void init_commands(void)
     init_cmd_watch();
     init_cmd_rate_test();
 
-    /* Tor (默认) + I2P (备选) + 社交 */
+    /* Tor (默认) + I2P (备选) + 跨传输桥接 + 社交 */
     init_cmd_tor();
     init_cmd_i2p();
+    init_cmd_bridge();
     init_cmd_social();
 }

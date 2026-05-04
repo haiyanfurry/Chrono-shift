@@ -53,7 +53,9 @@
       "Bash(sed -i '409s/.*/    cli::println\\(\"{}\", style::box_header\\(\"Chrono-shift CLI v3.2\"\\)\\);/' main.cpp)",
       "Bash(sed -i '410s/.*/    cli::println\\(\"  {} {}help{} 查看命令 | {}exit{} 退出 | {}i2p start{} 联网\", style::DOT, style::CYN, style::RST, style::RED, style::RST, style::GRN, style::RST\\);/' main.cpp)",
       "Bash(sed -i '409s/.*/    std::fputs\\(style::box_header\\(\"Chrono-shift CLI v3.2\"\\).c_str\\(\\), stdout\\); std::fputs\\(\"\\\\\\\\n\", stdout\\);/' main.cpp)",
-      "Bash(sed -i '410s/.*/    std::fputs\\(\"  \\\\033[36mhelp\\\\033[0m \\\\033[90m查看命令 | \\\\033[31mexit\\\\033[0m \\\\033[90m退出 | \\\\033[32mi2p start\\\\033[0m \\\\033[90m联网\\\\033[0m\\\\\\\\n\", stdout\\);/' main.cpp)"
+      "Bash(sed -i '410s/.*/    std::fputs\\(\"  \\\\033[36mhelp\\\\033[0m \\\\033[90m查看命令 | \\\\033[31mexit\\\\033[0m \\\\033[90m退出 | \\\\033[32mi2p start\\\\033[0m \\\\033[90m联网\\\\033[0m\\\\\\\\n\", stdout\\);/' main.cpp)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ]
   }
 }

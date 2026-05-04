@@ -73,6 +73,7 @@ list(APPEND CLI_CPP_SOURCES
     devtools/cli/commands/init_commands.cpp
     devtools/cli/commands/cmd_i2p.cpp
     devtools/cli/commands/cmd_tor.cpp
+    devtools/cli/commands/cmd_bridge.cpp
     devtools/cli/commands/cmd_social.cpp
 )
 
