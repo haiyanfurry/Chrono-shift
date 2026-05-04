@@ -57,6 +57,7 @@ file(GLOB_RECURSE CLIENT_CPP_SOURCES
     src/plugin/*.cpp
     src/i2p/*.cpp
     src/tor/*.cpp
+    src/glue/*.cpp
     src/social/*.cpp
 )
 

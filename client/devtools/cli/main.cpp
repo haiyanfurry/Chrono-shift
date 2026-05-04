@@ -23,6 +23,7 @@
 #include <string_view>
 
 #include "social/SocialManager.h"
+#include "terminal_style.h"
 #include <vector>
 
 // ============================================================
@@ -405,12 +406,12 @@ int main(int argc, char** argv)
     }
 
     // REPL 交互模式
-    cli::println("Chrono-shift 开发者模式 CLI (C++23)");
-    cli::println("输入 help 查看命令, exit 退出\n");
+    std::fputs("Chrono-shift CLI v3.2 - Tor/I2P Messenger\n", stdout);
+    std::fputs("help 查看命令 | exit 退出\n\n", stdout);
 
     std::string line;
     while (true) {
-        cli::print("devtools> ");
+        std::fputs(term::prompt().c_str(), stdout); std::fflush(stdout);
         std::fflush(stdout);
 
         if (!std::getline(std::cin, line)) {
